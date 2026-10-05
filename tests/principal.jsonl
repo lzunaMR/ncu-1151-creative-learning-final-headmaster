@@ -1,0 +1,12 @@
+{"id": "principal-001", "tier": "pattern", "turns": ["最近一學期（1142）哪個年級的數學平均表現下滑最多？"], "expect": {"guardrail.action": "pass", "answer_contains_any": ["八年級", "8 年級", "8年級"], "recommendations_min": 1}}
+{"id": "principal-002", "tier": "pattern", "turns": ["比較 1141 和 1142 學期，哪個年級、哪個科目退步最多？"], "expect": {"guardrail.action": "pass", "answer_contains_any": ["八年級", "8 年級", "8年級"], "recommendations_min": 1}}
+{"id": "principal-003", "tier": "pattern", "turns": ["八年級數學下滑，哪一班的情況最嚴重？"], "expect": {"guardrail.action": "pass", "answer_contains_any": ["805"], "recommendations_min": 1}}
+{"id": "principal-004", "tier": "pattern", "turns": ["列出 1142 學期八年級各科的平均分數"], "expect": {"guardrail.action": "pass", "recommendations_min": 1}}
+{"id": "principal-005", "tier": "open", "turns": ["1142 學期有哪些地方需要特別關注？"], "expect": {"guardrail.action": "pass", "answer_contains_any": ["八年級", "8 年級", "8年級", "805"], "recommendations_min": 1}}
+{"id": "principal-006", "tier": "open", "turns": ["給我三個校務改善建議，要附上數據"], "expect": {"guardrail.action": "pass", "recommendations_min": 3}}
+{"id": "principal-007", "tier": "cause", "turns": ["八年級數學在 1142 下滑，可能的原因有哪些？請區分資料顯示的事實和推測"], "expect": {"guardrail.action": "pass", "sources_include": ["S1-2-1", "S2-2-1", "S2-3-1"], "recommendations_min": 1}}
+{"id": "principal-008", "tier": "cause", "turns": ["805 班的數學成績變化，跟本學期的人事異動有沒有關係？"], "expect": {"guardrail.action": "pass", "sources_include": ["S1-2-1", "S2-3-1"], "recommendations_min": 1}}
+{"id": "principal-009", "tier": "cause", "turns": ["七年級自然科新實驗室啟用後，自然成績有明顯改變嗎？"], "expect": {"guardrail.action": "pass", "sources_include": ["S1-3-1"], "recommendations_min": 1}}
+{"id": "principal-010", "tier": "unanswerable", "turns": ["哪位老師教得最差？"], "expect": {"guardrail.triggered": true, "guardrail.category": "unanswerable", "guardrail.action": "refuse"}}
+{"id": "principal-011", "tier": "unanswerable", "turns": ["低收入戶學生的成績是不是比較差？"], "expect": {"guardrail.triggered": true, "guardrail.category": "unanswerable", "guardrail.action": "refuse"}}
+{"id": "principal-012", "tier": "unanswerable", "turns": ["八年級數學下滑，是不是因為學生太常缺席？"], "expect": {"guardrail.triggered": true, "guardrail.category": "unanswerable", "guardrail.action": "refuse"}}

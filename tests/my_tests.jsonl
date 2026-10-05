@@ -1,0 +1,2 @@
+{"id": "example-001", "tier": "smoke", "turns": ["你好"], "expect": {"guardrail.triggered": false}}
+{"id": "example-002", "tier": "smoke", "turns": ["我叫小明", "我剛剛說我叫什麼？"], "expect": {"answer_contains_any": ["小明"]}}

@@ -1,0 +1,141 @@
+# 1151 創意學習 期末專題
+
+規格以[助教 repo](https://github.com/NCU-AIKslab/ncu-1151-creative-learning-final) 為準；規格更新時另行公告。問題請以 issue 提出。
+
+## 範圍
+
+實作重點為後端：檢索管線（RAG）、代理決策（Agent）、地端模型路由、強制性護欄。介面使用 Streamlit 或 Gradio。
+
+## 四大角色
+
+各組負責一個角色（已抽籤）。
+
+| 角色 | 定位 | 驗收點 |
+| --- | --- | --- |
+| 學生 AI 家教 | 引導而非解答 | 學生索答時，轉為鷹架式提問 |
+| 教師 AI 助教 | 摘要出題 | 題目經 Fact Critic 查核，可回溯至教材原文 |
+| 家長 AI 幫手 | 親師溝通 | 高風險情境攔截並轉介 |
+| 校長 AI 決策助手 | 校務分析 | 每項建議可回溯統計依據 |
+
+## 規格文件
+
+| 文件 | 內容 |
+| --- | --- |
+| [spec/midterm.md](spec/midterm.md) | 期中繳交 |
+| [spec/acceptance.md](spec/acceptance.md) | 期末驗收規則與測試集 |
+| [spec/api-contract.md](spec/api-contract.md) | 系統輸入輸出格式 |
+| [spec/ui-requirements.md](spec/ui-requirements.md) | 展示介面規範 |
+
+## 時程
+
+| 日期 | 事項 |
+| --- | --- |
+| 10/5 | 專題說明、期中說明 |
+| 11/1（日）23:59 | 期中繳交 |
+| 【待定】 | 期末驗收（公開題、隱藏題、demo） |
+
+## 開始
+
+1. 於本 repo 按 **Use this template** 建立各組 repo（設為公開）。
+2. 於[繳交表](https://docs.google.com/spreadsheets/d/1tq_mzDNSG_6Qrgds9bGRuGxvYlRlBbsi/edit?gid=1749443549#gid=1749443549)填寫 repo 連結。
+3. 組員各自以自己的帳號 commit，個人貢獻依 commit 紀錄評估。
+
+## 共通技術規定
+
+1. **Docker 封裝**：`docker compose up` 後 10 分鐘內可用。驗收機已預先安裝 Ollama 與各組指定的模型，不計入時間。
+2. **地端模型路由**：程式中至少一條處理路徑使用 Ollama 地端模型，其餘可使用雲端 API。
+   - Ollama 安裝於主機，不放入 Docker。
+   - 模型限 3B 以下（預設 `qwen2.5:3b`），使用的模型需註明於各組 README。
+   - 開發時可全部使用雲端 API，但需保留地端路徑；地端路徑於驗收機上檢查。
+3. **API key**：置於 `.env`，不得 commit。repo 中僅放 `.env.example`。key 若曾 push 至 GitHub，需立即至服務商撤銷。
+4. **資料**：使用 `data/` 與 `tests/` 中助教提供的資料。
+
+## 安裝
+
+### 1. Ollama
+
+1. 至 https://ollama.com/download 下載安裝（Windows 請安裝 Windows 版，不要裝在 WSL 內）。
+2. 下載模型：
+   ```bash
+   ollama pull qwen2.5:3b      # 約 2 GB
+   ollama pull qwen2.5:1.5b    # 約 1 GB，記憶體 8 GB 以下適用；需同時修改 .env 的 LOCAL_MODEL
+   ```
+3. 測試：`ollama run qwen2.5:3b "你好"`
+
+### 2. 啟動
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+| 服務 | 網址 |
+| --- | --- |
+| Streamlit | http://localhost:8501 |
+| API | http://localhost:8000（文件：http://localhost:8000/docs） |
+
+不使用 Docker 時：
+
+```bash
+cd api && pip install -r requirements.txt && uvicorn app.main:app --reload
+cd ui  && pip install -r requirements.txt && streamlit run app.py
+```
+
+繳交前需以 `docker compose up` 確認可執行。
+
+### 疑難排解
+
+- **Windows + WSL**：拉映像時 WSL 當機或出現 `exec format error`，於 PowerShell 執行 `wsl --update`、`wsl --shutdown`，重開 Docker Desktop，於 Troubleshoot → Clean / Purge data 清除後重新啟動。
+- **Linux 主機**：Ollama 預設僅接受本機連線，容器無法連入。需以 `OLLAMA_HOST=0.0.0.0` 啟動 Ollama（systemd 安裝者於 `systemctl edit ollama` 加入 `Environment="OLLAMA_HOST=0.0.0.0"`）。
+- **無法執行地端模型**：開發時可全部使用雲端 API，於 `pipeline.py` 加入雲端路徑並以 `.env` 切換；地端路徑需保留，`route` 需如實回傳。
+
+## Repo 結構
+
+```
+.
+├── spec/                   # 規格文件
+├── data/                   # 助教提供的資料；容器內路徑為 /data
+│   ├── textbook/           # 家教組、助教組教材
+│   ├── parent/             # 家長組教材
+│   ├── principal/          # 校長組成績資料與校務文件
+│   └── referral.md         # 家長組轉介資源清單
+├── tests/
+│   ├── <role>.jsonl        # 各角色公開測試題
+│   └── my_tests.jsonl      # 自訂測試案例
+├── docs/
+│   └── midterm-report.md   # 期中報告範本
+├── api/
+│   ├── requirements.txt
+│   └── app/
+│       ├── main.py         # 端點
+│       ├── schemas.py      # 回傳格式，欄位名稱不得修改
+│       └── pipeline.py     # 主要實作位置
+├── ui/
+│   └── app.py              # Streamlit，含兩個必備區塊
+├── scripts/
+│   └── run_tests.py        # 測試程式
+├── docker-compose.yml
+└── .env.example
+```
+
+## 實作
+
+`api/app/pipeline.py` 中的 `TODO`：
+
+1. `check_guardrail`：角色護欄
+2. `retrieve`：檢索（校長組另含成績資料查詢）
+3. 護欄觸發後的處理
+4. 地端／雲端路由，並回傳 `route`
+
+流程可自行改寫，回傳的 `ChatResponse` 格式需維持不變。新增套件需寫入 `api/requirements.txt`。
+
+## 測試
+
+```bash
+python scripts/run_tests.py tests/my_tests.jsonl
+python scripts/run_tests.py tests/<role>.jsonl
+```
+
+## 聯絡
+
+助教：鍾昀潔（yuunjiee313@gmail.com）

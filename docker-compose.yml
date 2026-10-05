@@ -1,0 +1,21 @@
+# Ollama 不放在 compose 裡，請直接安裝在電腦上（https://ollama.com/download）。
+# api 透過 host.docker.internal 連到電腦上的 Ollama。
+services:
+  api:
+    build: ./api
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux 需要這行；Windows / Mac 本來就有
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "8000:8000"
+
+  ui:
+    build: ./ui
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api

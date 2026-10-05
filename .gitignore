@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+
+# 課程簡報與講義不公開
+*.pdf
