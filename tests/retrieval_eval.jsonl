@@ -1,0 +1,16 @@
+{"id": "eval-01", "type": "原文詞彙", "question": "本學期三次段考的日期是什麼時候？", "expect_ids": ["S1-2-3"]}
+{"id": "eval-02", "type": "原文詞彙", "question": "七年級自然科新實驗室什麼時候啟用？", "expect_ids": ["S1-3-1"]}
+{"id": "eval-03", "type": "原文詞彙", "question": "本學期學習扶助開辦哪些科目？", "expect_ids": ["S4-1-2"]}
+{"id": "eval-04", "type": "原文詞彙", "question": "學習扶助的成效要怎麼評估？", "expect_ids": ["S4-3-1"]}
+{"id": "eval-05", "type": "換句話說", "question": "課後輔導班每班最多幾人、什麼時候上課？", "expect_ids": ["S4-2-1"]}
+{"id": "eval-06", "type": "換句話說", "question": "家長希望換老師時學校要怎麼告知？", "expect_ids": ["S1-4-1"]}
+{"id": "eval-07", "type": "換句話說", "question": "哪個班的英文課完全不用中文上課？", "expect_ids": ["S1-2-2", "S3-2-1"]}
+{"id": "eval-08", "type": "跨段落", "question": "805 班換數學老師之後，學生適應得如何？", "expect_ids": ["S1-2-1", "S2-3-1"]}
+{"id": "eval-09", "type": "跨段落", "question": "903 班全英語授課的目的，以及學生目前的反應？", "expect_ids": ["S1-2-2", "S3-2-1"]}
+{"id": "eval-10", "type": "詞彙不一致", "question": "這學期有老師請長假、找人代課嗎？", "expect_ids": ["S1-2-1", "S2-3-1"]}
+{"id": "eval-11", "type": "詞彙不一致", "question": "八年級數學這學期的內容，學生為什麼容易卡關？", "expect_ids": ["S2-2-1"]}
+{"id": "eval-12", "type": "詞彙不一致", "question": "九年級英文的額外講義為什麼讓學生覺得吃力？", "expect_ids": ["S3-2-2"]}
+{"id": "eval-13", "type": "數字代號", "question": "每週一、三 16:10 開始的課是什麼？", "expect_ids": ["S4-2-1"]}
+{"id": "eval-14", "type": "跨段落", "question": "學習扶助的名單是根據哪一次的成績篩選？", "expect_ids": ["S4-1-3", "S2-3-2"]}
+{"id": "eval-15", "type": "換句話說", "question": "七、八年級這學期有什麼英文相關的比賽？", "expect_ids": ["S3-3-1"]}
+{"id": "eval-16", "type": "詞彙不一致", "question": "學校有沒有推動學生多看課外書的活動？", "expect_ids": ["S1-3-2"]}
