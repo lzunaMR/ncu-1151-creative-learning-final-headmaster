@@ -1,0 +1,4 @@
+# 只給本機方法比較實驗用（scripts/compare_retrievers.py），Docker 映像不安裝
+-r requirements.txt
+sentence-transformers>=3.0
+jieba>=0.42

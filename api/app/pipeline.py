@@ -11,6 +11,7 @@ from collections import defaultdict
 
 import httpx
 
+from . import retrieval
 from .schemas import ChatResponse, Guardrail, Source, TraceStep
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -27,9 +28,8 @@ def check_guardrail(message: str, trace: list[TraceStep]) -> Guardrail:
 
 
 def retrieve(message: str, trace: list[TraceStep]) -> list[Source]:
-    # TODO: 對 /data 中的教材建索引並檢索；校長組改成查詢成績資料
-    trace.append(TraceStep(step="retrieve", detail="尚未實作，無檢索結果"))
-    return []
+    # 校務文件檢索見 retrieval.py（版本由 RETRIEVER_VERSION 切換）；成績資料查詢待 analytics.py
+    return retrieval.retrieve(message, trace=trace)
 
 
 def generate_local(messages: list[dict]) -> str:
