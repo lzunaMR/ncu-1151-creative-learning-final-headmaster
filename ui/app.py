@@ -9,8 +9,8 @@ import streamlit as st
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
-st.set_page_config(page_title="期末專題", layout="wide")
-st.title("期末專題")  # TODO: 改成你們的角色名稱
+st.set_page_config(page_title="校長 AI 決策助手", layout="wide")
+st.title("校長 AI 決策助手")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -19,30 +19,51 @@ if "session_id" not in st.session_state:
 
 def render_backend(resp: dict) -> None:
     """必備區塊二：後台工程驗收區。"""
-    with st.expander(f"Sources（{len(resp['sources'])}）"):
-        if not resp["sources"]:
+    sources = resp.get("sources") or []
+    with st.expander(f"Sources（{len(sources)}）"):
+        if not sources:
             st.caption("無")
-        for s in resp["sources"]:
-            st.markdown(f"**{s['id']}**")
-            st.text(s["text"])
+        for s in sources:
+            st.markdown(f"**{s.get('id', '')}**")
+            st.text(s.get("text", ""))
 
-    g = resp["guardrail"]
-    label = f"{'已觸發' if g['triggered'] else '未觸發'} · {g['action']}"
+    g = resp.get("guardrail") or {}
+    label = f"{'已觸發' if g.get('triggered') else '未觸發'} · {g.get('action', '—')}"
     with st.expander(f"護欄判定：{label}"):
         st.json(g)
 
-    with st.expander(f"Agent 思考步驟（{len(resp['trace'])}）"):
-        for i, t in enumerate(resp["trace"], 1):
-            st.markdown(f"{i}. **{t['step']}**：{t['detail']}")
+    trace = resp.get("trace") or []
+    with st.expander(f"Agent 思考步驟（{len(trace)}）"):
+        if not trace:
+            st.caption("無")
+        for i, t in enumerate(trace, 1):
+            st.markdown(f"{i}. **{t.get('step', '')}**：{t.get('detail', '')}")
 
-    with st.expander(f"路由：{resp['route']}"):
-        st.write("地端模型" if resp["route"] == "local" else "雲端 API")
+    route = resp.get("route", "—")
+    with st.expander(f"路由：{route}"):
+        st.write({"local": "地端模型", "api": "雲端 API"}.get(route, "未回報"))
 
-    # 教師組 / 校長組的額外欄位
-    for key, title in (("questions", "題目與 Critic 查核"), ("recommendations", "建議與統計依據")):
-        if resp.get(key):
-            with st.expander(title):
-                st.code(json.dumps(resp[key], ensure_ascii=False, indent=2), language="json")
+    # 校長組：每項建議的 evidence（查詢與結果）
+    recs = resp.get("recommendations") or []
+    with st.expander(f"建議與統計依據（{len(recs)}）"):
+        if not recs:
+            st.caption("無")
+        for i, rec in enumerate(recs, 1):
+            st.markdown(f"**建議 {i}：{rec.get('claim', '')}**")
+            for ev in rec.get("evidence") or []:
+                st.caption("查詢")
+                st.code(ev.get("query", ""), language="python")
+                st.caption("結果")
+                result = ev.get("result")
+                if isinstance(result, (dict, list)):
+                    st.json(result)
+                else:
+                    st.code(str(result), language=None)
+
+    # 教師組的額外欄位
+    if resp.get("questions"):
+        with st.expander("題目與 Critic 查核"):
+            st.code(json.dumps(resp["questions"], ensure_ascii=False, indent=2), language="json")
 
 
 # 必備區塊一：使用者對話／指令區
