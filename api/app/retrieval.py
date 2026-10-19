@@ -59,6 +59,19 @@ PRESETS: dict[str, dict] = {
     "hybrid-weighted": dict(chunk="para", method="weighted", embed="bge-m3", tokenizer="bigram"),
     "hybrid-jieba": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="jieba"),
     "B+rerank": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="bigram", rerank=True),
+    # --- 第二輪：不需 LLM ---
+    "dense-sent2para": dict(chunk="sentence", method="dense", embed="bge-m3"),
+    "dense-mmr": dict(chunk="para", method="dense", embed="bge-m3", mmr=0.7),
+    "A+expand": dict(chunk="para", method="dense", embed="bge-m3", expand=True),
+    "bm25-expand": dict(chunk="para", method="bm25", tokenizer="bigram", expand=True),
+    "B+expand": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="bigram", expand=True),
+    # --- 第二輪：LLM 改寫查詢（rag_variants.py） ---
+    "hyde": dict(chunk="para", method="hyde", embed="bge-m3"),
+    "multiquery": dict(chunk="para", method="multiquery", embed="bge-m3"),
+    # --- 第二輪：bge-m3 的稀疏與多向量輸出（rag_variants.py） ---
+    "m3-sparse": dict(chunk="para", method="m3sparse"),
+    "m3-colbert": dict(chunk="para", method="m3colbert"),
+    "A+m3sparse": dict(chunk="para", method="hybrid", embed="bge-m3", fuse=("dense", "m3sparse")),
 }
 
 HEADING_RE = re.compile(r"^(#{1,3})\s+(\S+)\s+(.*)$")
@@ -125,6 +138,7 @@ def chunk_documents(strategy: str = "para", size: int = 120, overlap: int = 40) 
 
     para      一個 ### 段落一塊（標題＋內文）
     para_ctx  同 para，但前面加上「文件 > 章節」標題，讓短段落帶有上下文
+    sentence  一句一塊（small-to-big：用句子比對，回傳時展開成整段）
     section   一個 ## 章節一塊（合併其下所有段落）
     window    同一份文件內以固定字元數滑動視窗切，相鄰視窗重疊 overlap 字
     """
@@ -133,6 +147,13 @@ def chunk_documents(strategy: str = "para", size: int = 120, overlap: int = 40) 
         return [Chunk(p.id, p.text, [p.id]) for p in paras.values()]
     if strategy == "para_ctx":
         return [Chunk(p.id, f"{p.doc} > {p.section}\n{p.text}", [p.id]) for p in paras.values()]
+    if strategy == "sentence":
+        # small-to-big：用句子比對，sources 仍回傳整段原文
+        chunks = []
+        for p in paras.values():
+            sents = [p.heading] + [x for x in re.split(r"(?<=[。！？；])|\n", p.body) if x and x.strip()]
+            chunks += [Chunk(f"{p.id}#s{i}", t.strip(), [p.id]) for i, t in enumerate(sents)]
+        return chunks
     if strategy == "section":
         groups: dict[str, list[Paragraph]] = {}
         for p in paras.values():
@@ -167,6 +188,35 @@ def chunk_documents(strategy: str = "para", size: int = 120, overlap: int = 40) 
                 start, n = end - overlap, n + 1
         return chunks
     raise ValueError(f"未知的切塊方式：{strategy}")
+
+
+# ---------------------------------------------------------------- 查詢擴展
+
+# 原文用語 → 一般人可能的說法。只依文件用語整理，寫於難題評測集（tests/retrieval_eval_hard.jsonl）之前；
+# 但撰寫者看過原本 16 題，對那 16 題的結果會偏樂觀
+SYNONYMS: dict[str, list[str]] = {
+    "代理教師": ["代課", "代課老師", "新老師", "換老師"],
+    "育嬰留職停薪": ["育嬰假", "請長假", "留停", "請假"],
+    "任課教師": ["老師", "授課老師"],
+    "學習扶助": ["補救教學", "課後輔導", "補強", "輔導班", "補習"],
+    "段考": ["考試", "期中考", "期末考", "月考"],
+    "全英語授課": ["全英文", "英文上課", "不用中文"],
+    "英語": ["英文"],
+    "晨讀": ["閱讀", "看書", "課外書", "讀書"],
+    "實驗室": ["實驗教室", "設備", "教室"],
+    "補充教材": ["講義", "額外教材", "參考書"],
+    "讀者劇場": ["英文比賽", "話劇", "戲劇", "表演"],
+    "書面通知": ["通知家長", "告知家長", "發通知"],
+    "教學研究會": ["教研會", "科會", "開會"],
+    "篩選": ["名單", "挑選", "資格"],
+    "會考": ["國中會考", "升學考試"],
+}
+
+
+def expand_query(query: str) -> str:
+    """問題裡出現一般說法時，在後面補上原文用語。"""
+    extra = [formal for formal, casual in SYNONYMS.items() if formal not in query and any(c in query for c in casual)]
+    return query + (" " + " ".join(extra) if extra else "")
 
 
 # ---------------------------------------------------------------- 斷詞與 BM25
@@ -312,35 +362,55 @@ def _minmax(xs: list[float]) -> list[float]:
     return [(x - lo) / (hi - lo) if hi > lo else 0.0 for x in xs]
 
 
+def _method_scores(method: str, query: str, cfg: dict, idx: Index) -> list[float]:
+    """單一方法對每個切塊的分數。dense、bm25 在這裡；其餘實驗方法在 rag_variants.py。"""
+    if method == "dense":
+        q = embed([query], cfg["embed"])[0]
+        return [_dot(q, v) for v in idx.vectors]
+    if method == "bm25":
+        return idx.bm25[cfg["tokenizer"]].scores(tokenize(query, cfg["tokenizer"]))
+    from . import rag_variants  # 需要 transformers，只在本機實驗載入
+
+    return rag_variants.scores(method, query, cfg, idx)
+
+
+def mmr(order: list[int], vectors: list[list[float]], rel: list[float], lam: float, n: int = 10) -> list[int]:
+    """Maximal Marginal Relevance：每次挑「相關但和已選的不像」的切塊，讓結果涵蓋不同段落。"""
+    pool, picked = order[:n], []
+    while pool:
+        best = max(
+            pool,
+            key=lambda i: lam * rel[i] - (1 - lam) * max((_dot(vectors[i], vectors[j]) for j in picked), default=0),
+        )
+        picked.append(best)
+        pool.remove(best)
+    return picked + order[n:]
+
+
 def rank_chunks(query: str, cfg: dict) -> list[tuple[Chunk, float]]:
     """依設定把所有切塊排序，回傳 (切塊, 分數)，分數越大越相關。"""
     idx = get_index(cfg)
     n = len(idx.chunks)
     method = cfg["method"]
+    if cfg.get("expand"):
+        query = expand_query(query)
 
     def by(scores):
         return sorted(range(n), key=lambda i: -scores[i])
 
-    if method in ("dense", "hybrid", "weighted"):
-        q = embed([query], cfg["embed"])[0]
-        dense = [_dot(q, v) for v in idx.vectors]
-    if method in ("bm25", "hybrid", "weighted"):
-        sparse = idx.bm25[cfg["tokenizer"]].scores(tokenize(query, cfg["tokenizer"]))
-
-    if method == "dense":
-        scores = dense
-    elif method == "bm25":
-        scores = sparse
-    elif method == "hybrid":
-        fused = rrf([by(dense), by(sparse)])
+    if method == "hybrid":
+        fused = rrf([by(_method_scores(m, query, cfg, idx)) for m in cfg.get("fuse", ("dense", "bm25"))])
         scores = [fused[i] for i in range(n)]
     elif method == "weighted":
         alpha = cfg.get("alpha", 0.5)
-        scores = [alpha * d + (1 - alpha) * s for d, s in zip(_minmax(dense), _minmax(sparse))]
+        dense, sparse = (_minmax(_method_scores(m, query, cfg, idx)) for m in ("dense", "bm25"))
+        scores = [alpha * d + (1 - alpha) * s for d, s in zip(dense, sparse)]
     else:
-        raise ValueError(f"未知的檢索方法：{method}")
+        scores = _method_scores(method, query, cfg, idx)
 
     order = by(scores)
+    if cfg.get("mmr"):
+        order = mmr(order, idx.vectors, scores, cfg["mmr"])
     if cfg.get("rerank"):
         top_n = order[: cfg.get("rerank_n", 10)]
         rs = rerank_scores(query, [idx.chunks[i].text for i in top_n])
