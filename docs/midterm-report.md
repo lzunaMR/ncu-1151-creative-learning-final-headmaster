@@ -72,9 +72,15 @@ flowchart LR
 
 其他 K 值的命中率：K=1 時 A 13/16（81%）、B 15/16（94%）；K=5 時兩版皆 16/16。
 
-補充：另有 12 題難題集 `tests/retrieval_eval_hard.jsonl`（比較、否定、口語、抽象等問法），K=3 時 A 12/12（100%）、B 10/12（83%）。逐題結果見 [docs/retrieval-experiments-hard-raw.md](retrieval-experiments-hard-raw.md)。
+量測環境：最初以 sentence-transformers 載入 `BAAI/bge-m3`（`EMBED_BACKEND=st`）產生本表；之後在 Windows 11、RTX 4060、Ollama 0.40.5 上以 `EMBED_BACKEND=ollama` 重跑 K=1、3、5，16 題的 Top-K 與上表逐列相同（以 `diff` 比對），命中率也一致。
 
-> 量測環境：本機以 sentence-transformers 載入 `BAAI/bge-m3`（`EMBED_BACKEND=st`）。Docker 內使用 Ollama 的 `bge-m3`，是同一個模型，數值可能有小數點後的差異；裝好 Ollama 後需以 `EMBED_BACKEND=ollama` 重跑並更新本表。
+建索引耗時（25 個段落，bge-m3 1024 維，Ollama）：第一次 32.1 秒（含 Ollama 把模型載入 GPU），模型已載入後重建 2.7 秒，都遠低於 10 分鐘的啟動預算。
+
+Docker 實機驗證（同一台機器，Docker Desktop 4.95.0）：`docker compose up -d --build` 到 `/health` 回 200 共 1 分 01 秒。`/chat` 問「805 班換數學老師之後，學生適應得如何？」，trace 為「版本A K=3 命中 S1-2-1, S2-3-1, S2-1-1」，與上表第 8 題相同；`tests/principal.jsonl` 中 principal-007～009 的 `sources_include` 檢查全部通過（這三題仍 FAIL，原因是 `recommendations` 尚未實作，與檢索無關）。
+
+Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.internal` 連不到，`/chat` 會回 500，但 `/health` 仍是 200，不容易發現。需先設使用者環境變數 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama（防火牆只允許私人網路）。
+
+補充：另有 12 題難題集 `tests/retrieval_eval_hard.jsonl`（比較、否定、口語、抽象等問法），K=3 時 A 12/12（100%）、B 10/12（83%）。難題集目前只用 sentence-transformers（`EMBED_BACKEND=st`）量測過，逐題結果見 [docs/retrieval-experiments-hard-raw.md](retrieval-experiments-hard-raw.md)。
 
 ## 5. 失敗案例
 
@@ -110,6 +116,7 @@ flowchart LR
 | `ui/app.py` | Claude Code | 改標題、evidence 逐項顯示（查詢與結果）、缺欄位不報錯 | 以 Streamlit AppTest 對假的 `/chat` 送三種回應（完整、空陣列、缺欄位），確認五個展開欄皆出現且無例外 |
 | `api/app/retrieval.py`（切塊、BM25、嵌入、版本 A／B 與實驗設定） | Claude Code | 撰寫四種切塊方式、BM25、RRF／加權合併、Ollama 與 sentence-transformers 兩種嵌入來源、Ollama 失敗時退回 BM25 | 檢查 25 個段落 id 與原文標題一致、每塊 `covered_ids` 都是真實 id；抽查視窗切塊 S1-w3 的文字確實橫跨 S1-2-1 與 S1-2-2；未開 Ollama 時以 FastAPI TestClient 確認 `/health` 仍回 200、trace 會寫明改用 BM25 |
 | `scripts/compare_retrievers.py` 與 `docs/retrieval-experiments.md` | Claude Code | 撰寫比較腳本、執行 12 組設定、草擬各方法優缺點分析 | 分析中每個「為什麼」都另外跑過驗證：列出共同二元組、印出兩路名次、改寫問句重跑（指令與結果見 §5）；原本寫的 jieba 失敗原因經查證不成立，已改成實際查到的詞頻原因 |
+| §4 Ollama／Docker 實機驗證（大項一） | Claude Code | 安裝 Ollama 與 Docker、以 `EMBED_BACKEND=ollama` 重跑 K=1、3、5 評測、計時建索引與 `docker compose up`、排查容器連不到 Ollama 的問題 | 以 `diff` 逐列比對 Ollama 與原表的 Top-K；用 `curl /health`、實際送 `/chat` 檢查 trace 與 sources；修改 `OLLAMA_HOST` 前在容器內以 httpx 連 `host.docker.internal:11434` 失敗（Errno 101），並以 `Get-NetTCPConnection` 確認 Ollama 只聽 `127.0.0.1`；修改後以 socket 直連 `192.168.65.254:11434` 成功；跑 `run_tests.py tests/principal.jsonl` 確認 007～009 沒有 sources 相關錯誤 |
 | §2、§3、§5 文字 | Claude Code | 依實驗結果草擬設計理由與失敗案例 | 文中每個數字都對照 `docs/retrieval-experiments-raw.md` 與 `eval_retrieval.py` 的輸出逐一核對 |
 | `tests/retrieval_eval_hard.jsonl`（12 題難題） | Claude Code | 依 S1–S4 草擬比較、否定、口語等較難的題目 | 先固定同義詞辭典才出題（避免辭典配合題目）；每題逐句對照原文，確認答案確實在所標的段落；`eval_retrieval.py` 檢查 id 都存在 |
 | `api/app/retrieval.py` 第二輪（句子切塊、MMR、查詢擴展）與 `api/app/rag_variants.py`（HyDE、多重查詢、bge-m3 稀疏／多向量） | Claude Code | 撰寫進階 RAG 方法 | 以同一題（hard-11）逐一跑過所有方法，並印出中間結果（HyDE 文字、改寫問句、稀疏權重）人工檢查；bge-m3 稀疏／多向量依 FlagEmbedding 原始碼的算法實作，並確認權重檔來自同一模型 repo |
