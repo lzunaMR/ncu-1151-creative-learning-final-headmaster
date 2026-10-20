@@ -2,6 +2,54 @@
 
 規格以[助教 repo](https://github.com/NCU-AIKslab/ncu-1151-creative-learning-final) 為準；規格更新時另行公告。問題請以 issue 提出。
 
+## 本組說明（校長 AI 決策助手）
+
+### 使用的模型
+
+| 用途 | 模型 | 執行位置 | 設定 |
+| --- | --- | --- | --- |
+| 生成回覆 | `qwen2.5:3b` | 地端 Ollama（`route` 固定為 `local`） | `LOCAL_MODEL`；記憶體 8 GB 以下可改 `qwen2.5:1.5b` |
+| 檢索嵌入 | `bge-m3` | 地端 Ollama | `EMBED_BACKEND=ollama` |
+
+本組不使用雲端 API，`.env` 不需要任何 key。驗收機需先下載兩個模型：
+
+```bash
+ollama pull qwen2.5:3b
+ollama pull bge-m3
+```
+
+### 啟動
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+容器連不到 Ollama（`/health` 是 200，但 `/chat` 回 500）時，Ollama 需以 `OLLAMA_HOST=0.0.0.0` 啟動，見下方「疑難排解」。
+
+### `.env` 設定
+
+| 變數 | 預設 | 說明 |
+| --- | --- | --- |
+| `RETRIEVER_VERSION` | `A` | `A`：段落切塊＋bge-m3 向量檢索；`B`：A＋BM25（字元二元組）以 RRF 合併。改完執行 `docker compose up -d --force-recreate api` |
+| `RETRIEVER_K` | `3` | 每次檢索取幾個切塊 |
+| `LOCAL_MODEL` | `qwen2.5:3b` | 生成用的地端模型（3B 以下） |
+
+### 系統怎麼回答
+
+1. 判斷問題是否需要查成績（`api/app/analytics.py`）。需要時用 pandas 查 `scores.csv`，比較兩個學期，逐層找出下滑最多的年級、科目、班級。每項結論放進 `recommendations`，附上實際執行的 pandas 查詢（`evidence.query`）與結果。
+2. 檢索校務文件（`api/app/retrieval.py`），段落 id 放進 `sources`。
+3. 生成（`api/app/pipeline.py`）：answer 分成「資料顯示的事實」（程式算出的數字）與「解讀與建議」（模型撰寫，原因一律標為推測）。
+
+驗證 evidence 可重跑：先啟動 API，再執行 `python scripts/check_evidence.py tests/principal.jsonl`。
+
+### 已知限制
+
+- 護欄尚未實作（不在期中範圍），`guardrail` 固定回 `pass`，因此 `tests/principal.jsonl` 的 unanswerable 三題（010～012）不會通過。
+- 對話歷史存在記憶體，API 重啟後就會清空。
+- Ollama 連不到時，回覆只列資料事實，並在 answer 與 trace 註明生成失敗。
+- 成績比較只看同一年級標籤；跨學年（例如 1132 比 1141）時同一年級是不同屆學生，班級代號也會改變，回覆會加註並略過班級比較。
+
 ## 範圍
 
 實作重點為後端：檢索管線（RAG）、代理決策（Agent）、地端模型路由、強制性護欄。介面使用 Streamlit 或 Gradio。

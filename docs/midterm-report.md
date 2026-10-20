@@ -2,22 +2,58 @@
 
 > 繳交前請刪除所有 `>` 開頭的說明文字。
 
-- 組別角色：（學生 AI 家教 / 教師 AI 助教 / 家長 AI 幫手 / 校長 AI 決策助手）
-- 組員：（姓名、學號、GitHub 帳號）
+- 組別角色：校長 AI 決策助手
+- 組員：黃俞絜，115522100，yujieeeeeee（姓名、學號、GitHub 帳號）
 - 繳交 commit：（`git rev-parse midterm` 的結果）
 
 ## 1. 系統架構
 
-> 一張圖即可。標出切塊、索引、檢索、生成各在哪裡，以及哪條路徑走地端模型。
-> 可以用 Mermaid 直接畫，GitHub 會自動顯示成圖，例如：
-
 ```mermaid
-flowchart LR
-    Q[使用者問題] --> R[檢索]
-    I[(索引)] --> R
-    R --> G[生成：Ollama 地端模型]
-    G --> A[回覆 + sources]
+flowchart TB
+    U["校長（使用者）"] --> UI["Streamlit 介面 :8501"]
+    UI -->|"POST /chat"| H["FastAPI /chat<br/>pipeline.handle()"]
+    H --> GR["護欄<br/>期中固定 pass"]
+    GR --> IN{"需要查成績？<br/>analytics.parse()"}
+
+    subgraph DATA["成績分析 analytics.py"]
+        IN -->|是| PD["pandas 查詢 scores.csv<br/>學期 × 年級 × 班級 × 科目"]
+        PD --> FACT["資料事實 + recommendations<br/>evidence.query 可重跑"]
+    end
+
+    subgraph IDX["索引（API 啟動時建立）"]
+        DOCS["data/principal/docs<br/>S1–S4 校務文件"] --> CHUNK["切塊：一個 ### 段落一塊<br/>記錄 covered_ids"]
+        CHUNK --> EMB["嵌入：bge-m3<br/>Ollama embed API"]
+        EMB --> VEC[("向量索引")]
+        CHUNK --> BM["BM25 索引<br/>字元二元組"]
+    end
+
+    subgraph RET["檢索 retrieval.py"]
+        QE["問題嵌入：bge-m3<br/>Ollama embed API"] --> R["版本 A：向量餘弦<br/>版本 B：向量 + BM25（RRF）<br/>取 Top-K=3"]
+        VEC --> R
+        BM --> R
+        R --> SRC["sources：段落 id"]
+    end
+
+    IN -->|否| QE
+    FACT --> QE
+    SRC --> P["組 prompt<br/>資料事實 + [段落id] 文件 + 對話歷史"]
+    FACT --> P
+    P --> LOC["生成：Ollama qwen2.5:3b<br/>route = local"]
+    LOC --> ANS["answer：資料事實 + 解讀與建議（推測）<br/>+ sources、trace、recommendations"]
+    ANS --> UI
+
+    classDef local fill:#d8f3dc,stroke:#2d6a4f,color:#1b4332
+    class EMB,QE,LOC local
 ```
+
+綠色節點走 Ollama 地端模型：檢索的嵌入（`bge-m3`）與生成（`qwen2.5:3b`）。本組不使用雲端 API，所有回覆都由地端模型產生，`route` 固定回 `local`。
+
+| 階段 | 位置 | 說明 |
+| --- | --- | --- |
+| 切塊、索引 | `api/app/retrieval.py`（`chunk_documents`、`get_index`） | API 啟動時（`main.py` 的 `warmup`）建立；一個 `###` 段落一塊 |
+| 檢索 | `retrieval.retrieve(query, k, version)` | 版本由 `RETRIEVER_VERSION` 切換，回傳段落 id 作為 `sources` |
+| 成績分析 | `api/app/analytics.py`（`analyze`、`run_query`） | pandas 計算兩學期差值並逐層找出下滑最多的年級、科目、班級；每項結論附可重跑的 `evidence.query` |
+| 生成 | `api/app/pipeline.py`（`generate`，呼叫 Ollama `/api/chat`） | 數字由 pandas 算好放進 answer 的「資料顯示的事實」，模型只寫「解讀與建議」，事實與推測分開 |
 
 ## 2. 設計決定與理由
 
@@ -28,7 +64,7 @@ flowchart LR
 | 嵌入模型 | `bge-m3`（1024 維，多語）；Docker 內透過主機 Ollama 的 `/api/embed` 地端執行 | 三個模型在同一條件下比較：bge-m3 的 Recall@3 為 1.00、MRR 0.90；bge-small-zh-v1.5（512 維）速度快約 10 倍，但「額外講義」對「補充教材」這題（eval-12）掉到第 4 名；多語 MiniLM（384 維，以英文為主訓練）各項最差（MRR 0.82）。選 bge-m3 的另一個原因是部署：Ollama 官方有 bge-m3，驗收機可地端執行、Docker 映像不用裝 torch；bge-small-zh 沒有官方 Ollama 版本。 |
 | K 值 | 3（每次取 3 個切塊；段落切塊下即 3 個段落），`RETRIEVER_K` 可調 | K=1 時 A 只有 13/16、B 15/16，因為向量的第 1、2 名常常只差 0.01–0.02，排序不穩；K=3 兩版都 16/16，也剛好放得下跨兩段的題目（eval-08、09、10、14）。K=5 沒有多命中任何一題，多出的 2 段都無關，只會讓 3B 地端模型讀更長、更雜的 context。 |
 | 檢索方法 | A：向量餘弦相似度；B：向量＋BM25（字元二元組）以 RRF 合併 | 向量擅長換句話說（「請長假、找人代課」對「育嬰留停、代理教師」，A 排第 1；BM25 排第 5）；BM25 擅長原文詞、班級代號與時間（805、16:10），兩者互補，B 的 MRR 從 0.90 提高到 0.97。中文 BM25 用字元二元組而不用 jieba：jieba 沒有比較好（Hit@3 一樣是 15/16），還多一個套件。不用重排序：bge-reranker-base 的 Hit@1 從 15 掉到 13、每題延遲約 5 倍，Docker 還得裝 torch。不用加權合併：需要正規化分數並調 α，MRR 0.94 也比 RRF 差。**限制**：在難題集（概括、口語問法）上 B 反而較差（Hit@3 10/12，A 為 12/12），因為問題和原文沒有共用詞時，BM25 那一路沒有訊號，還會把正確段落拖下去（見 §5、[第二輪實驗](retrieval-experiments.md#最重要的發現b-在難題集上反而比-a-差)）。 |
-| 地端模型 | | |
+| 地端模型 | 生成：`qwen2.5:3b`（Ollama，`/chat` 的所有回覆都走它，本組不使用雲端 API）；嵌入：`bge-m3`（Ollama，檢索用）。記憶體 8 GB 以下可改 `LOCAL_MODEL=qwen2.5:1.5b` | 規格限 3B 以下，`qwen2.5:3b` 是助教預設、驗收機已預裝，且 Qwen2.5 系列支援中文。3B 模型算數與遵循格式不可靠，所以設計上不讓它碰數字：統計結果由 pandas 算出並原樣放進回覆，模型只負責解讀與建議；prompt 也要求它只用給定的數字、以 [段落id] 標註文件、把原因寫成推測。整套流程不需要 API key，驗收機只要有 Ollama 就能執行 |
 
 ## 3. 兩個版本
 
@@ -121,3 +157,6 @@ Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.intern
 | `tests/retrieval_eval_hard.jsonl`（12 題難題） | Claude Code | 依 S1–S4 草擬比較、否定、口語等較難的題目 | 先固定同義詞辭典才出題（避免辭典配合題目）；每題逐句對照原文，確認答案確實在所標的段落；`eval_retrieval.py` 檢查 id 都存在 |
 | `api/app/retrieval.py` 第二輪（句子切塊、MMR、查詢擴展）與 `api/app/rag_variants.py`（HyDE、多重查詢、bge-m3 稀疏／多向量） | Claude Code | 撰寫進階 RAG 方法 | 以同一題（hard-11）逐一跑過所有方法，並印出中間結果（HyDE 文字、改寫問句、稀疏權重）人工檢查；bge-m3 稀疏／多向量依 FlagEmbedding 原始碼的算法實作，並確認權重檔來自同一模型 repo |
 | `docs/retrieval-experiments.md` 第二輪分析 | Claude Code | 草擬各方法優缺點 | 每個原因都另外驗證：印出 BM25 共同二元組、兩兩段落相似度（MMR）、LLM 實際輸出（HyDE 幻覺、改寫飄移）、稀疏權重；並用程式逐題比對各方法與 A 的名次差異，修正了 3 處與數據不符的敘述 |
+| `api/app/analytics.py`（成績分析、recommendations） | Claude（Cowork） | 撰寫問題解析、pandas 查詢組裝、兩學期差值與逐層下鑽、evidence JSON 化 | ①`scripts/check_evidence.py` 以 `df = pd.read_csv(scores.csv)` 重跑 principal 12 題的全部 evidence，24/24 筆與回傳結果一致；②另做一份改過分數的 csv（把八年級數學下滑抹平、改成 703 班數學大跌），回答隨之改為七年級／703 班，確認沒有把結論寫死；③逐題人工核對 001～004 的年級、班級與數字 |
+| `api/app/pipeline.py`（/chat 組裝、對話歷史、地端生成） | Claude（Cowork） | 撰寫 `handle` 流程、prompt、地端生成與錯誤處理 | 以假的 Ollama 確認多輪對話會帶入歷史、Ollama 關閉時 `/chat` 仍回 200 且 trace 寫明失敗原因；本機 Windows + Ollama 實跑 `tests/my_tests.jsonl` 2/2、`tests/principal.jsonl` 9/12（未過的 3 題為護欄，不在期中範圍） |
+| §1 架構圖、§2「地端模型」列、README 本組說明 | Claude（Cowork） | 草擬 Mermaid 架構圖與說明文字 | 以 mermaid-cli 實際渲染確認可顯示；圖中每個節點對照程式中的函式與 `.env` 變數名稱 |
