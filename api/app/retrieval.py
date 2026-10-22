@@ -32,7 +32,7 @@ DOCS_DIR = Path(os.environ.get("PRINCIPAL_DOCS_DIR", "/data/principal/docs"))
 if not DOCS_DIR.exists():  # 不在 Docker 內時，改用 repo 內的資料
     DOCS_DIR = Path(__file__).resolve().parents[2] / "data" / "principal" / "docs"
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")  # 不用 localhost：Windows 會先試 IPv6 ::1，每次連線多等約 2 秒
 EMBED_BACKEND = os.environ.get("EMBED_BACKEND", "ollama")
 DEFAULT_K = int(os.environ.get("RETRIEVER_K", "3"))
 

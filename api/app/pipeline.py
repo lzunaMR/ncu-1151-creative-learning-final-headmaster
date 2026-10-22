@@ -38,7 +38,8 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
-OLLAMA_URL = _env("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+# 不用 localhost：Windows 會先試 IPv6 ::1，每次連線多等約 2 秒
+OLLAMA_URL = _env("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 LOCAL_MODEL = _env("LOCAL_MODEL", "qwen2.5:3b")
 HISTORY_TURNS = int(_env("HISTORY_TURNS", "6") or 6)  # 送進模型的最近幾輪對話
 
