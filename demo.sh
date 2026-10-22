@@ -24,7 +24,7 @@ docker info >/dev/null 2>&1 || fail "Docker 沒有在執行，請先啟動 Docke
 
 step "檢查 Ollama"
 command -v ollama >/dev/null || fail "找不到 Ollama，請先安裝：https://ollama.com/download"
-curl -sf -m 3 http://localhost:11434/api/version >/dev/null || fail "Ollama 沒有在執行，請先啟動 Ollama（ollama serve）"
+curl -sf -m 3 http://127.0.0.1:11434/api/version >/dev/null || fail "Ollama 沒有在執行，請先啟動 Ollama（ollama serve）"
 if [ "$(uname)" = "Linux" ] && ss -ltn 2>/dev/null | grep -q '127.0.0.1:11434'; then
   fail "Ollama 只接受本機連線，容器連不到。請執行：sudo systemctl edit ollama，加入
   [Service]
@@ -34,7 +34,7 @@ fi
 echo "    Ollama 正常"
 
 step "檢查模型"
-tags="$(curl -sf http://localhost:11434/api/tags)"
+tags="$(curl -sf http://127.0.0.1:11434/api/tags)"
 for m in "${MODELS[@]}"; do
   if echo "$tags" | grep -q "\"name\":\"$m\(:latest\)\?\""; then echo "    $m 已安裝"
   else echo "    下載 $m（只有第一次需要）"; ollama pull "$m"; fi
@@ -53,7 +53,7 @@ for _ in $(seq 1 200); do
 done
 [ "${ready:-}" = 1 ] || { docker compose logs --tail 40 api; fail "等候逾時，以上是 api 的 log"; }
 health="$(curl -s http://localhost:8000/health)"
-echo "$health" | grep -q '"ollama":"正常"' || printf '\n\033[33m[注意] API 回報：%s\n       請看 docker compose logs api 的 [ollama] 訊息\033[0m\n' "$health"
+echo "$health" | grep -q '"ready":true' || printf '\n\033[33m[注意] API 回報：%s\n       請看 docker compose logs api 的 [ollama] 訊息\033[0m\n' "$health"
 
 printf '\n\033[32m完成（%s 秒）。\033[0m\n' "$(( $(date +%s) - t0 ))"
 echo "  介面：http://localhost:8501"
