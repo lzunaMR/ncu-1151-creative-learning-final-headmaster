@@ -1,0 +1,61 @@
+{"id": "principal-001", "question": "最近一學期（1142）哪個年級的數學平均表現下滑最多？", "label": "scores", "src": "公開題"}
+{"id": "principal-002", "question": "比較 1141 和 1142 學期，哪個年級、哪個科目退步最多？", "label": "scores", "src": "公開題"}
+{"id": "principal-003", "question": "八年級數學下滑，哪一班的情況最嚴重？", "label": "scores", "src": "公開題"}
+{"id": "principal-004", "question": "列出 1142 學期八年級各科的平均分數", "label": "scores", "src": "公開題"}
+{"id": "principal-005", "question": "1142 學期有哪些地方需要特別關注？", "label": "scores", "src": "公開題"}
+{"id": "principal-006", "question": "給我三個校務改善建議，要附上數據", "label": "scores", "src": "公開題"}
+{"id": "principal-007", "question": "八年級數學在 1142 下滑，可能的原因有哪些？請區分資料顯示的事實和推測", "label": "cause", "src": "公開題"}
+{"id": "principal-008", "question": "805 班的數學成績變化，跟本學期的人事異動有沒有關係？", "label": "cause", "src": "公開題"}
+{"id": "principal-009", "question": "七年級自然科新實驗室啟用後，自然成績有明顯改變嗎？", "label": "cause", "src": "公開題"}
+{"id": "principal-010", "question": "哪位老師教得最差？", "label": "unanswerable", "src": "公開題"}
+{"id": "principal-011", "question": "低收入戶學生的成績是不是比較差？", "label": "unanswerable", "src": "公開題"}
+{"id": "principal-012", "question": "八年級數學下滑，是不是因為學生太常缺席？", "label": "unanswerable", "src": "公開題"}
+{"id": "eval-01", "question": "本學期三次段考的日期是什麼時候？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-02", "question": "七年級自然科新實驗室什麼時候啟用？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-03", "question": "本學期學習扶助開辦哪些科目？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-04", "question": "學習扶助的成效要怎麼評估？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-05", "question": "課後輔導班每班最多幾人、什麼時候上課？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-06", "question": "家長希望換老師時學校要怎麼告知？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-07", "question": "哪個班的英文課完全不用中文上課？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-08", "question": "805 班換數學老師之後，學生適應得如何？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-09", "question": "903 班全英語授課的目的，以及學生目前的反應？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-10", "question": "這學期有老師請長假、找人代課嗎？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-11", "question": "八年級數學這學期的內容，學生為什麼容易卡關？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-12", "question": "九年級英文的額外講義為什麼讓學生覺得吃力？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-13", "question": "每週一、三 16:10 開始的課是什麼？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-14", "question": "學習扶助的名單是根據哪一次的成績篩選？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-15", "question": "七、八年級這學期有什麼英文相關的比賽？", "label": "docs", "src": "檢索評測集"}
+{"id": "eval-16", "question": "學校有沒有推動學生多看課外書的活動？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-01", "question": "七年級和八年級的數學，這學期教的內容有什麼不同？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-02", "question": "哪些科目沒有開學習扶助班？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-03", "question": "九年級的段考時間和其他年級一樣嗎？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-04", "question": "上學期考 62 分的學生能參加學習扶助嗎？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-05", "question": "學期中才發現跟不上的學生，還能加入補救教學嗎？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-06", "question": "805 班的家長應該會收到什麼通知？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-07", "question": "有哪些措施是先試辦、之後再決定要不要擴大？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-08", "question": "全英語授課的成效最後由誰來檢討？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-09", "question": "這學期學校有哪些硬體設施的改變？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-10", "question": "數學領域的會議，代理老師有出席嗎？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-11", "question": "補救教學的錢從哪裡來？", "label": "docs", "src": "檢索評測集"}
+{"id": "hard-12", "question": "九年級英文是不是變難了？", "label": "docs", "src": "檢索評測集"}
+{"id": "router-01", "question": "你好", "label": "chitchat", "src": "自訂"}
+{"id": "router-02", "question": "謝謝你的幫忙", "label": "chitchat", "src": "自訂"}
+{"id": "router-03", "question": "你可以幫我做什麼？", "label": "chitchat", "src": "自訂"}
+{"id": "router-04", "question": "我叫小明", "label": "chitchat", "src": "自訂"}
+{"id": "router-05", "question": "我剛剛說我叫什麼？", "label": "chitchat", "src": "自訂"}
+{"id": "router-06", "question": "早安，今天也辛苦了", "label": "chitchat", "src": "自訂"}
+{"id": "router-07", "question": "805 班的代理老師教學能力好不好？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-08", "question": "哪些學生常常遲到？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-09", "question": "單親家庭的學生成績是不是比較差？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-10", "question": "男生跟女生哪個數學比較好？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-11", "question": "有去補習的學生成績有比較好嗎？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-12", "question": "學生平均每天讀書幾個小時？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-13", "question": "哪個老師請假最多？", "label": "unanswerable", "src": "自訂"}
+{"id": "router-14", "question": "九年級英文 1142 學期的平均是多少？", "label": "scores", "src": "自訂"}
+{"id": "router-15", "question": "七年級哪一科進步最多？", "label": "scores", "src": "自訂"}
+{"id": "router-16", "question": "1141 學期哪一班的國文最好？", "label": "scores", "src": "自訂"}
+{"id": "router-17", "question": "這學期缺考的人數有多少？", "label": "scores", "src": "自訂"}
+{"id": "router-18", "question": "各年級的社會平均分數是多少？", "label": "scores", "src": "自訂"}
+{"id": "router-19", "question": "九年級英文成績有變化嗎？跟補充教材有沒有關係？", "label": "cause", "src": "自訂"}
+{"id": "router-20", "question": "七年級自然成績變好是因為新實驗室嗎？", "label": "cause", "src": "自訂"}
+{"id": "router-21", "question": "903 班的英文成績和全英語授課有沒有關係？", "label": "cause", "src": "自訂"}

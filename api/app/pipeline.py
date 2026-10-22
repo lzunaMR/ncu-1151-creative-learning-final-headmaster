@@ -29,7 +29,7 @@ from collections import defaultdict
 
 import httpx
 
-from . import analytics, retrieval
+from . import analytics, retrieval, router
 from .schemas import ChatResponse, Guardrail, Source, TraceStep
 
 
@@ -60,9 +60,12 @@ SYSTEM_PROMPT = """你是國中校長的 AI 決策助手，請用繁體中文回
 # ---------------------------------------------------------------- 護欄（T16）
 
 
-def check_guardrail(message: str, trace: list[TraceStep]) -> Guardrail:
-    """期中不實作護欄（spec/midterm.md「不在期中範圍」），固定回傳 pass。"""
-    trace.append(TraceStep(step="guardrail", detail="期中版本未實作護欄，固定放行（pass）"))
+def check_guardrail(route: router.Route | None, trace: list[TraceStep]) -> Guardrail:
+    """依分流結果決定護欄：問到資料沒有的欄位（unanswerable）就拒答。ROUTER_MODE=off 時固定放行。"""
+    if route is not None and route.label == "unanswerable":
+        trace.append(TraceStep(step="guardrail", detail="問題需要資料中沒有的欄位，拒答（refuse）"))
+        return Guardrail(triggered=True, category="unanswerable", action="refuse")
+    trace.append(TraceStep(step="guardrail", detail="放行（pass）"))
     return Guardrail(triggered=False, category=None, action="pass")
 
 
@@ -92,10 +95,10 @@ def retrieve(message: str, trace: list[TraceStep]) -> list[Source]:
 # ---------------------------------------------------------------- 生成（T14：只走地端）
 
 
-def generate_local(messages: list[dict]) -> str:
+def generate_local(messages: list[dict], model: str | None = None) -> str:
     resp = httpx.post(
         f"{OLLAMA_URL}/api/chat",
-        json={"model": LOCAL_MODEL, "messages": messages, "stream": False, "options": {"temperature": 0.3}},
+        json={"model": model or LOCAL_MODEL, "messages": messages, "stream": False, "options": {"temperature": 0.3}},
         timeout=120,
     )
     resp.raise_for_status()
@@ -106,16 +109,20 @@ class GenerationError(RuntimeError):
     pass
 
 
-def generate(messages: list[dict], trace: list[TraceStep]) -> str:
+def generate(messages: list[dict], trace: list[TraceStep], model: str | None = None) -> str:
     """呼叫 Ollama 地端模型產生回覆；失敗時丟 GenerationError，trace 照實記錄。"""
+    model = model or LOCAL_MODEL
     try:
-        text = generate_local(messages)
+        text = generate_local(messages, model)
     except Exception as e:  # noqa: BLE001
         msg = f"{type(e).__name__}: {e}"
-        trace.append(TraceStep(step="generate", detail=f"地端 Ollama {LOCAL_MODEL} 失敗：{msg}"))
+        trace.append(TraceStep(step="generate", detail=f"地端 Ollama {model} 失敗：{msg}"))
         raise GenerationError(msg) from e
-    trace.append(TraceStep(step="generate", detail=f"使用地端 Ollama {LOCAL_MODEL}（route=local）"))
+    trace.append(TraceStep(step="generate", detail=f"使用地端 Ollama {model}（route=local）"))
     return text.strip()
+
+
+CHAT_PROMPT = "你是國中校長的 AI 決策助手，請用繁體中文簡短回覆。你能做的事：分析全校成績資料、查詢校務會議文件、提出附數據的校務建議。"
 
 
 # ---------------------------------------------------------------- 組裝（T13）
@@ -154,8 +161,23 @@ def handle(session_id: str, message: str) -> ChatResponse:
     trace: list[TraceStep] = []
     history = _history[session_id]
 
-    guardrail = check_guardrail(message, trace)
-    # 期中護欄固定 pass；期末在這裡依 guardrail.action 改走拒答（unanswerable → refuse）
+    route = None if router.ROUTER_MODE == "off" else router.route(message, trace)
+    guardrail = check_guardrail(route, trace)
+
+    if guardrail.action == "refuse":
+        answer = router.REFUSAL
+        history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
+        return ChatResponse(answer=answer, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
+
+    if route is not None and route.label == "chitchat":
+        # 閒聊不查資料，交給小模型回覆
+        messages = [{"role": "system", "content": CHAT_PROMPT}, *history[-2 * HISTORY_TURNS :], {"role": "user", "content": message}]
+        try:
+            answer = generate(messages, trace, router.CHAT_MODEL)
+        except GenerationError as e:
+            answer = f"（地端模型目前無法連線：{e}）"
+        history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
+        return ChatResponse(answer=answer, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
 
     analysis = analyze_scores(session_id, message, trace)
     sources = retrieve(message, trace)
