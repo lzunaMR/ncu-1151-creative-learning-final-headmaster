@@ -136,7 +136,7 @@ Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.intern
 
 > 執行 `python scripts/run_tests.py tests/<role>.jsonl`，貼上輸出，並說明主要的失敗原因。期中不以通過率計分。
 
-執行環境：乾淨資料夾（不含 `.env` 與任何索引）執行 `demo.ps1` 啟動 Docker（版本 A、K=3、Ollama `qwen2.5:3b`／`bge-m3`，Windows 11、CPU），再執行 `python scripts/run_tests.py tests/principal.jsonl`，12 題共 252 秒。
+執行環境：乾淨資料夾（不含 `.env` 與任何索引）執行 `demo.ps1` 啟動 Docker（版本 A、K=3、問題分流 `ROUTER_MODE=rule`；Ollama `qwen2.5:3b`／`qwen2.5:0.5b`／`bge-m3`；Windows 11、CPU），再執行 `python scripts/run_tests.py tests/principal.jsonl`，12 題共 173 秒。
 
 ```
 PASS  principal-001
@@ -148,25 +148,16 @@ PASS  principal-006
 PASS  principal-007
 PASS  principal-008
 PASS  principal-009
-FAIL  principal-010
-      guardrail.triggered 應為 True，實際為 False
-      guardrail.category 應為 'unanswerable'，實際為 None
-      guardrail.action 應為 'refuse'，實際為 'pass'
-FAIL  principal-011
-      guardrail.triggered 應為 True，實際為 False
-      guardrail.category 應為 'unanswerable'，實際為 None
-      guardrail.action 應為 'refuse'，實際為 'pass'
-FAIL  principal-012
-      guardrail.triggered 應為 True，實際為 False
-      guardrail.category 應為 'unanswerable'，實際為 None
-      guardrail.action 應為 'refuse'，實際為 'pass'
+PASS  principal-010
+PASS  principal-011
+PASS  principal-012
 
 分層統計
   pattern        4/4
   open           2/2
   cause          3/3
-  unanswerable   0/3
-  總計           9/12
+  unanswerable   3/3
+  總計           12/12
 ```
 
 | 分層 | 結果 | 說明 |
@@ -174,9 +165,11 @@ FAIL  principal-012
 | pattern（001～004） | 4/4 | 年級、班級由 pandas 從 `scores.csv` 算出，`recommendations` 皆附 evidence |
 | open（005～006） | 2/2 | 同上；006 要求三個建議，`recommendations` 有 3 項以上 |
 | cause（007～009） | 3/3 | `sources` 命中應引用的校務文件段落（例如 008 命中 S1-2-1、S2-3-1） |
-| unanswerable（010～012） | 0/3 | **失敗原因：期中未實作護欄**（`spec/midterm.md` 列為不在期中範圍），`check_guardrail` 固定回 `pass`。這三題問的是教師、家庭背景、出缺席，都是 `scores.csv` 沒有的欄位，期末需在護欄偵測後回 `refuse` |
+| unanswerable（010～012） | 3/3 | 護欄不在期中範圍，但我們先用問題分流（`api/app/router.py`）實作：判定需要資料沒有的欄位（教師、家庭背景、出缺席）時回 `refuse`。加入分流前這 3 題全部失敗（9/12，因為護欄固定 `pass`） |
 
-同一環境下，`tests/my_tests.jsonl` 2/2 通過（含多輪記得名字）；`python scripts/check_evidence.py tests/principal.jsonl` 重跑全部 evidence，24/24 筆與回傳結果一致。
+**通過率要保守解讀**：預設的關鍵字規則是看著這些題目寫的。在規則固定後才寫的保留集（17 題、換了說法）上，規則一題 unanswerable 都沒攔到（0/6），隱藏題換了問法就可能失敗，詳見 [docs/router-experiments.md](router-experiments.md)。
+
+同一環境下，`tests/my_tests.jsonl` 2/2 通過（閒聊改由 `qwen2.5:0.5b` 回覆，仍記得多輪中的名字）；`python scripts/check_evidence.py tests/principal.jsonl` 重跑全部 evidence，20/20 筆一致（拒答的 3 題不產生 evidence）。
 
 ## 7. AI 使用揭露
 
@@ -198,3 +191,5 @@ FAIL  principal-012
 | 第二輪實驗以 Ollama 重跑（`docs/retrieval-experiments-*-ollama-raw.md`） | Claude Code | 以 Ollama 的 bge-m3 與 qwen2.5:3b 重跑兩個評測集的 16 組設定，並分析與 sentence-transformers 結果的差異 | 用程式逐格比對兩次執行的名次表，只有 HyDE、多重查詢（換了 LLM）有差異；印出 3B 模型的實際生成內容人工檢查；每題延遲異常（2.3 秒）時，以 Ollama 回報的 `total_duration`（0.04 秒）對照，查出是 Windows 的 `localhost` 先試 IPv6 造成，改用 `127.0.0.1` 後重測為 0.3 秒 |
 | Docker 一鍵 demo（`demo.ps1`、`demo.sh`、`docker-compose.yml`、`api/app/ollama_check.py`） | Claude Code | 讓 `docker compose up` 不需要 `.env`、啟動時自動檢查並下載 Ollama 模型、一鍵腳本處理 `OLLAMA_HOST` | 在不含 `.env` 的乾淨資料夾實際執行 `demo.ps1`：79 秒完成，腳本自動把 Ollama 改成監聽 `0.0.0.0`；發現 PowerShell 5.1 把 `/health` 的中文解碼錯誤造成誤報，改比對英文的 `ready` 欄位後重跑無誤報；以 `-Version B` 切換後，trace 顯示「版本B」；`demo.sh` 以 `bash -n` 檢查語法（未在 macOS／Linux 實跑）；`ollama_check` 測過連得到、連不到、缺模型三種情況，並實際自動下載一個 46 MB 模型後刪除；`/health` 以 TestClient 確認回 200 並附 Ollama 狀態 |
 | §6 公開測試題 | Claude Code | 在 Docker 環境執行 `run_tests.py`、整理失敗原因 | 輸出為實際執行結果原樣貼上；cause 類 008 另以 `/chat` 確認 sources 為 S1-2-1、S2-3-1、S2-1-1；失敗的 3 題逐一對照 `spec/midterm.md`，確認護欄不在期中範圍 |
+| 切塊方式比較與選擇（`scripts/select_chunking.py`、`docs/retrieval-experiments.md` 第四輪） | Claude Code | 實作 8 類、15 種切塊方式，以及「先定規則再看結果」的選擇流程（開發／測試集分開、成對 bootstrap 信賴區間） | 15 種切法都檢查過每塊的 `covered_ids` 是真實段落 id，並抽看視窗、遞迴、語意切塊的實際內容；選擇規則在跑實驗前就寫在腳本開頭；分析中的每個數字都對照原始輸出 |
+| 問題分流（`api/app/router.py`、`scripts/eval_router.py`、`docs/router-experiments.md`） | Claude Code | 實作規則、小模型分類、欄位檢查三種分流方式；閒聊改用 0.5B、unanswerable 拒答 | 61 題評測集先於規則寫好；規則寫完後先記下 `router.py` 雜湊值才出 17 題保留集，看過結果也沒有再改規則或 prompt；分流前後以同一題實測延遲與引用段落；Docker 乾淨環境重跑公開題 12/12、my_tests 2/2、evidence 20/20 |

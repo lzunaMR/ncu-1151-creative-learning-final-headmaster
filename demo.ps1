@@ -16,7 +16,7 @@ param(
 # 不用 Stop：Windows PowerShell 5.1 會把原生指令（docker、ollama）寫到 stderr 的進度訊息當成錯誤
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
-$Models = @("qwen2.5:3b", "bge-m3")
+$Models = @("qwen2.5:3b", "qwen2.5:0.5b", "bge-m3")
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Fail($msg) { Write-Host "`n[錯誤] $msg" -ForegroundColor Red; exit 1 }
