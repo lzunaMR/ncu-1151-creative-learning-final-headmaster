@@ -116,7 +116,7 @@ Docker 實機驗證（同一台機器，Docker Desktop 4.95.0）：`docker compo
 
 Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.internal` 連不到，`/chat` 會回 500，但 `/health` 仍是 200，不容易發現。需先設使用者環境變數 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama（防火牆只允許私人網路）。
 
-補充：另有 12 題難題集 `tests/retrieval_eval_hard.jsonl`（比較、否定、口語、抽象等問法），K=3 時 A 12/12（100%）、B 10/12（83%）。難題集目前只用 sentence-transformers（`EMBED_BACKEND=st`）量測過，逐題結果見 [docs/retrieval-experiments-hard-raw.md](retrieval-experiments-hard-raw.md)。
+補充：另有 12 題難題集 `tests/retrieval_eval_hard.jsonl`（比較、否定、口語、抽象等問法），K=3 時 A 12/12（100%）、B 10/12（83%）。難題集先以 sentence-transformers 量測，之後改用 Ollama（`EMBED_BACKEND=ollama`）重跑，兩版每題的 Top-3 完全相同。逐題結果見 [docs/retrieval-experiments-hard-ollama-raw.md](retrieval-experiments-hard-ollama-raw.md)。
 
 ## 5. 失敗案例
 
@@ -136,12 +136,47 @@ Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.intern
 
 > 執行 `python scripts/run_tests.py tests/<role>.jsonl`，貼上輸出，並說明主要的失敗原因。期中不以通過率計分。
 
-> 【待辦】本機尚未安裝 Ollama 與 Docker，`/chat` 的生成步驟無法執行，所以這節還沒有真實輸出。裝好之後依序執行：
-> `ollama pull qwen2.5:3b`、`ollama pull bge-m3`、`docker compose up --build`，再執行 `python scripts/run_tests.py tests/principal.jsonl`，把完整輸出貼在下方，並逐題說明失敗原因。
+執行環境：乾淨資料夾（不含 `.env` 與任何索引）執行 `demo.ps1` 啟動 Docker（版本 A、K=3、Ollama `qwen2.5:3b`／`bge-m3`，Windows 11、CPU），再執行 `python scripts/run_tests.py tests/principal.jsonl`，12 題共 252 秒。
 
 ```
-（貼上輸出）
+PASS  principal-001
+PASS  principal-002
+PASS  principal-003
+PASS  principal-004
+PASS  principal-005
+PASS  principal-006
+PASS  principal-007
+PASS  principal-008
+PASS  principal-009
+FAIL  principal-010
+      guardrail.triggered 應為 True，實際為 False
+      guardrail.category 應為 'unanswerable'，實際為 None
+      guardrail.action 應為 'refuse'，實際為 'pass'
+FAIL  principal-011
+      guardrail.triggered 應為 True，實際為 False
+      guardrail.category 應為 'unanswerable'，實際為 None
+      guardrail.action 應為 'refuse'，實際為 'pass'
+FAIL  principal-012
+      guardrail.triggered 應為 True，實際為 False
+      guardrail.category 應為 'unanswerable'，實際為 None
+      guardrail.action 應為 'refuse'，實際為 'pass'
+
+分層統計
+  pattern        4/4
+  open           2/2
+  cause          3/3
+  unanswerable   0/3
+  總計           9/12
 ```
+
+| 分層 | 結果 | 說明 |
+| --- | --- | --- |
+| pattern（001～004） | 4/4 | 年級、班級由 pandas 從 `scores.csv` 算出，`recommendations` 皆附 evidence |
+| open（005～006） | 2/2 | 同上；006 要求三個建議，`recommendations` 有 3 項以上 |
+| cause（007～009） | 3/3 | `sources` 命中應引用的校務文件段落（例如 008 命中 S1-2-1、S2-3-1） |
+| unanswerable（010～012） | 0/3 | **失敗原因：期中未實作護欄**（`spec/midterm.md` 列為不在期中範圍），`check_guardrail` 固定回 `pass`。這三題問的是教師、家庭背景、出缺席，都是 `scores.csv` 沒有的欄位，期末需在護欄偵測後回 `refuse` |
+
+同一環境下，`tests/my_tests.jsonl` 2/2 通過（含多輪記得名字）；`python scripts/check_evidence.py tests/principal.jsonl` 重跑全部 evidence，24/24 筆與回傳結果一致。
 
 ## 7. AI 使用揭露
 
@@ -160,3 +195,6 @@ Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.intern
 | `api/app/analytics.py`（成績分析、recommendations） | Claude（Cowork） | 撰寫問題解析、pandas 查詢組裝、兩學期差值與逐層下鑽、evidence JSON 化 | ①`scripts/check_evidence.py` 以 `df = pd.read_csv(scores.csv)` 重跑 principal 12 題的全部 evidence，24/24 筆與回傳結果一致；②另做一份改過分數的 csv（把八年級數學下滑抹平、改成 703 班數學大跌），回答隨之改為七年級／703 班，確認沒有把結論寫死；③逐題人工核對 001～004 的年級、班級與數字 |
 | `api/app/pipeline.py`（/chat 組裝、對話歷史、地端生成） | Claude（Cowork） | 撰寫 `handle` 流程、prompt、地端生成與錯誤處理 | 以假的 Ollama 確認多輪對話會帶入歷史、Ollama 關閉時 `/chat` 仍回 200 且 trace 寫明失敗原因；本機 Windows + Ollama 實跑 `tests/my_tests.jsonl` 2/2、`tests/principal.jsonl` 9/12（未過的 3 題為護欄，不在期中範圍） |
 | §1 架構圖、§2「地端模型」列、README 本組說明 | Claude（Cowork） | 草擬 Mermaid 架構圖與說明文字 | 以 mermaid-cli 實際渲染確認可顯示；圖中每個節點對照程式中的函式與 `.env` 變數名稱 |
+| 第二輪實驗以 Ollama 重跑（`docs/retrieval-experiments-*-ollama-raw.md`） | Claude Code | 以 Ollama 的 bge-m3 與 qwen2.5:3b 重跑兩個評測集的 16 組設定，並分析與 sentence-transformers 結果的差異 | 用程式逐格比對兩次執行的名次表，只有 HyDE、多重查詢（換了 LLM）有差異；印出 3B 模型的實際生成內容人工檢查；每題延遲異常（2.3 秒）時，以 Ollama 回報的 `total_duration`（0.04 秒）對照，查出是 Windows 的 `localhost` 先試 IPv6 造成，改用 `127.0.0.1` 後重測為 0.3 秒 |
+| Docker 一鍵 demo（`demo.ps1`、`demo.sh`、`docker-compose.yml`、`api/app/ollama_check.py`） | Claude Code | 讓 `docker compose up` 不需要 `.env`、啟動時自動檢查並下載 Ollama 模型、一鍵腳本處理 `OLLAMA_HOST` | 在不含 `.env` 的乾淨資料夾實際執行 `demo.ps1`：79 秒完成，腳本自動把 Ollama 改成監聽 `0.0.0.0`；發現 PowerShell 5.1 把 `/health` 的中文解碼錯誤造成誤報，改比對英文的 `ready` 欄位後重跑無誤報；以 `-Version B` 切換後，trace 顯示「版本B」；`demo.sh` 以 `bash -n` 檢查語法（未在 macOS／Linux 實跑）；`ollama_check` 測過連得到、連不到、缺模型三種情況，並實際自動下載一個 46 MB 模型後刪除；`/health` 以 TestClient 確認回 200 並附 Ollama 狀態 |
+| §6 公開測試題 | Claude Code | 在 Docker 環境執行 `run_tests.py`、整理失敗原因 | 輸出為實際執行結果原樣貼上；cause 類 008 另以 `/chat` 確認 sources 為 S1-2-1、S2-3-1、S2-1-1；失敗的 3 題逐一對照 `spec/midterm.md`，確認護欄不在期中範圍 |

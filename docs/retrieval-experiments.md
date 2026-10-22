@@ -2,7 +2,7 @@
 
 > 目的不是找出分數最高的方法，而是了解每種方法在這份資料上**為什麼好、為什麼不好**。
 > 每組設定與基本版 A 只差一個變因；原始輸出見 [retrieval-experiments-raw.md](retrieval-experiments-raw.md)（16 題）與 [retrieval-experiments-hard-raw.md](retrieval-experiments-hard-raw.md)（難題 12 題）。
-> 第一輪比較基本的切塊、嵌入與混合檢索；[第二輪](#第二輪難題評測集與進階-rag) 加入難題集，以及 small-to-big、MMR、查詢擴展、HyDE、多重查詢、bge-m3 稀疏／多向量。
+> 第一輪比較基本的切塊、嵌入與混合檢索；[第二輪](#第二輪難題評測集與進階-rag) 加入難題集，以及 small-to-big、MMR、查詢擴展、HyDE、多重查詢、bge-m3 稀疏／多向量；[第三輪](#第三輪改用-ollama-重跑) 改用驗收時的實際環境（Ollama 的 bge-m3 與 qwen2.5:3b）重跑。
 
 ## 重跑方式
 
@@ -209,3 +209,54 @@ HyDE 與多重查詢的延遲幾乎都花在 CPU 上的 LLM 生成。
 2. **B 的優勢只在「問法接近原文」時成立**。面對概括或口語的問法，BM25 會拖累結果。期中報告的 B 仍維持「向量＋BM25」，但這個限制要寫進 §2 的理由。
 3. **真正補到 A 弱點的是「改寫查詢」類方法**（HyDE、查詢擴展），它們處理的是詞彙不一致，而不是換一種比對方式。代價分別是延遲與幻覺（HyDE），以及人工維護與洩漏（辭典）。
 4. 每個方法的效果都和**語料特性**綁在一起：段落短，所以 ColBERT 和 Small-to-Big 用不太到；段落彼此不重複，所以 MMR 反而有害；用字正式，口語問題就需要翻譯。換一份語料，這些結論都要重新驗證。
+
+---
+
+## 第三輪：改用 Ollama 重跑
+
+前兩輪的嵌入與 LLM 都在本機用 sentence-transformers／transformers 執行（`EMBED_BACKEND=st`，LLM 用 Qwen2.5-1.5B）。驗收時實際用的是 Ollama，所以用同一份程式、同一份評測集，改設 `EMBED_BACKEND=ollama LLM_BACKEND=ollama` 重跑。原始輸出見 [retrieval-experiments-ollama-raw.md](retrieval-experiments-ollama-raw.md)（16 題）與 [retrieval-experiments-hard-ollama-raw.md](retrieval-experiments-hard-ollama-raw.md)（難題）。
+
+```bash
+EMBED_BACKEND=ollama LLM_BACKEND=ollama python scripts/compare_retrievers.py --file tests/retrieval_eval_hard.jsonl   --presets A B bm25-bigram bm25-jieba dense-ctx dense-section dense-window hybrid-weighted hybrid-jieba             dense-sent2para dense-mmr A+expand bm25-expand B+expand hyde multiquery
+```
+
+- 只跑得了 16 組：Ollama 只有 bge-m3 與 qwen2.5:3b。bge-small-zh、MiniLM、cross-encoder 重排序、bge-m3 稀疏／多向量（含 A+m3sparse）這 6 組 Ollama 不支援，保留第一、二輪的 sentence-transformers 結果。
+- 量測環境：Windows 11、Intel UHD 770 內顯（Ollama 沒用到 GPU，`size_vram` 為 0，全部跑在 CPU）、Ollama 0.40.7。
+
+### 結果
+
+**不用 LLM 的 14 組設定，兩個評測集每一題的名次都和 sentence-transformers 完全相同**（用程式逐格比對兩份名次表）。也就是說，Ollama 的 bge-m3（GGUF F16）和 HuggingFace 原版的排序結果一致，前兩輪對這些方法的分析在驗收環境下都成立。
+
+有差異的只有需要 LLM 的兩個方法，因為 LLM 從 1.5B 換成了 3B：
+
+| 設定 | 16 題 Hit@1 | 16 題 MRR | 難題 Hit@1 | 難題 Hit@3 | 難題 Recall@3 | 難題 MRR | 每題延遲 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A（參考） | 13/16 | 0.90 | 10/12 | 12/12 | 1.00 | 0.92 | 約 0.3 秒 |
+| hyde（1.5B） | 13/16 | 0.91 | 11/12 | 12/12 | 1.00 | 0.96 | （CPU 約 9 秒） |
+| **hyde（3B）** | **15/16** | **0.97** | 11/12 | 12/12 | 1.00 | 0.96 | 約 2.7–3.3 秒 |
+| multiquery（1.5B） | 14/16 | 0.93 | 10/12 | 11/12 | 0.88 | 0.90 | （CPU 約 10 秒） |
+| **multiquery（3B）** | 14/16 | 0.93 | 10/12 | **12/12** | **1.00** | **0.92** | 約 5.5 秒 |
+
+（1.5B 的延遲是 transformers 在 CPU 上用 bfloat16 跑的，和 Ollama 的量化模型不能直接比較。）
+
+### 換成 3B 之後
+
+- **多重查詢不再飄走**。1.5B 把「補救教學的錢從哪裡來？」改寫成「教育資源的補充資金來自何處？」，主題不見了；3B 改寫成「補救教學所需之經費源自何處？」，主題保留，還把「錢」換成原文的「經費」。hard-07「先試辦、之後再決定要不要擴大」，1.5B 寫出兩大段空泛的句子；3B 寫成「何種校務措施擬先於試辦階段推行，待成效評估後方決定是否全面推廣？」，和原文 S1-2-2 的用語很接近。所以難題集的 Recall@3 從 0.88 回到 1.00。**改寫品質非常依賴模型大小**，1.5B 不適合做這件事。
+- **HyDE 仍然會編內容**。3B 寫「本學期學校新增了兩座新廁所，並對舊有的運動場進行了全面修繕」、經費「來自學校預算調整及政府補助款項，並鼓勵家長捐贈」，都不是事實。檢索結果卻更好了：16 題的 eval-07、eval-16 都升到第 1。這再次說明 HyDE 靠的是「寫得像原文」，而不是「寫得對」，生成的文字只能拿來檢索。
+- **LLM 方法無法完全重現**。同樣設 `temperature=0`，用 Ollama 跑了兩次，hard-07 的多重查詢一次排第 1、一次排第 2。純檢索方法兩次結果完全相同。報告裡引用 LLM 方法的數字時，要註明這一點。
+
+### 延遲：一個和方法無關、但影響很大的發現
+
+第一次用 Ollama 跑時，每題延遲約 2.3 秒，比 sentence-transformers（76 ms）慢了 30 倍。但 Ollama 自己回報的 `total_duration` 只有 0.04 秒，所以時間不是花在模型上。
+
+- 假設：連線本身很慢。程式預設的 `OLLAMA_URL` 是 `http://localhost:11434`，而 Ollama 只監聽 IPv4 的 `127.0.0.1`；Windows 會先把 `localhost` 解析成 IPv6 的 `::1`，連不上才退回 IPv4。
+- 驗證：同一個請求各送 3 次，`localhost` 每次 2.26–2.34 秒，`127.0.0.1` 每次 0.32–0.34 秒；`Get-NetTCPConnection` 也顯示 Ollama 只在 `127.0.0.1` 上監聽。
+- 修正：`retrieval.py`、`pipeline.py` 的預設值改成 `127.0.0.1`，上表是修正後重跑的數字。Docker 內走 `host.docker.internal`，不受這個問題影響；但本機直接跑時，每次 `/chat` 都會多等 4 秒以上（嵌入、生成各 2 秒）。
+
+修正後，A、B 每題約 0.3 秒（CPU 上的 Ollama），HyDE 多 2–3 秒、多重查詢多 5 秒，都是 LLM 生成的時間。
+
+### 第三輪結論
+
+1. 前兩輪「B 在難題集比 A 差」等結論，在驗收環境（Ollama）下完全成立，名次逐題相同。
+2. 需要 LLM 的方法，結果取決於用哪個 LLM，而且每次執行可能不同；換成驗收機的 3B 之後，多重查詢明顯變好，HyDE 的幻覺問題仍在。
+3. 如果之後要把查詢改寫放進正式版本，3B 的多重查詢在兩個評測集都沒有變差（難題 Hit@3 12/12），但每題多 5 秒，而且結果不完全可重現，要和 demo 時的等待時間一起考量。
