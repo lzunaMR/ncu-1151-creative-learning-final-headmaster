@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections import defaultdict
 
 import httpx
@@ -147,6 +148,26 @@ def build_messages(message: str, history: list[dict], analysis: analytics.Analys
     ]
 
 
+CITE_RE = re.compile(r"\[(S\d+-\d+-\d+|PY-[A-Z0-9-]+)\]")
+
+
+def tidy(model_text: str) -> str:
+    """模型有時會模仿歷史中的回答格式，重抄「【資料顯示的事實】…【解讀與建議】」；只留最後一段解讀。"""
+    if "【解讀與建議】" in model_text:
+        model_text = model_text.rsplit("【解讀與建議】", 1)[1]
+    return model_text.replace("【資料顯示的事實】", "").strip()
+
+
+def check_citations(model_text: str, sources: list[Source], trace: list[TraceStep]) -> str:
+    """引用查核：回答裡的 [段落id] 必須是這次真的送給模型的 sources，否則附上警告。"""
+    cited = list(dict.fromkeys(CITE_RE.findall(model_text)))
+    bad = [c for c in cited if c not in {src.id for src in sources}]
+    trace.append(TraceStep(step="citation_check", detail=f"引用 {', '.join(cited) or '無'}；不在 sources 中：{', '.join(bad) or '無'}"))
+    if bad:
+        model_text += f"\n\n⚠ 引用的 {', '.join(bad)} 不在這次檢索到的段落中，該處說明可能沒有依據，請對照 Sources。"
+    return model_text
+
+
 def compose_answer(analysis: analytics.Analysis, model_text: str) -> str:
     if not analysis.used:
         return model_text
@@ -191,6 +212,7 @@ def handle(session_id: str, message: str) -> ChatResponse:
             model_text = generate(messages, trace)
         except GenerationError as e:
             model_text = f"（地端模型目前無法連線，未產生文字說明：{e}）"
+        model_text = check_citations(tidy(model_text), ca.sources, trace)
         bad = course.unsupported_numbers(model_text, ca.facts, ca.sources)
         if bad:
             model_text += f"\n\n⚠ 以上說明中的數字 {', '.join(bad)} 不在資料中，可能是模型自行產生的，請以「資料顯示的事實」為準。"
@@ -210,6 +232,7 @@ def handle(session_id: str, message: str) -> ChatResponse:
         model_text = generate(messages, trace)
     except GenerationError as e:
         model_text = f"（地端模型目前無法連線，未產生文字說明：{e}）"
+    model_text = check_citations(tidy(model_text), sources, trace)
 
     answer = compose_answer(analysis, model_text)
     history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
