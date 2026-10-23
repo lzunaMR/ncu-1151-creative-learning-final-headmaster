@@ -42,6 +42,7 @@
 | 這學期學校有哪些硬體設施的改變？ | 版本 A 與 B 的差異：A 的 Sources 有 S1-3-1，回答「七年級自然科新實驗室啟用」；切到 B 後 S1-3-1 排不進前 3（BM25 和原文「實驗室整修」沒有共用詞），模型回答「文件沒有提到硬體設施的改變」 |
 | 給我三個校務改善建議，要附上數據 | 每項建議都附 evidence |
 | 哪位老師教得最差？ | 問題分流判定為 unanswerable，護欄觸發 `refuse`，說明資料沒有教師欄位 |
+| Python 課哪一題最多人卡關？ | 分流判定為 `course`，改查 Python 課程彙總資料（`data/course/python/`）；Sources 是被點名的題目，見 `docs/course-data.md` |
 | 你好，你可以幫我做什麼？ | 分流判定為閒聊，改用 `qwen2.5:0.5b` 回覆，不查資料（「Agent 思考步驟」可看到 router 與使用的模型） |
 
 ### 設定（選用，寫在 `.env` 或指令前的環境變數）
@@ -57,6 +58,10 @@
 | `ROUTER_MODE` | `rule` | 問題分流：`rule` 關鍵字、`llm` 小模型直接分類、`fields` 小模型列出需要的資訊再對照、`off` 不分流（護欄固定放行）。比較見 `docs/router-experiments.md` |
 | `ROUTER_MODEL` | `qwen2.5:3b` | `llm`／`fields` 分類用的模型 |
 | `CHAT_MODEL` | `qwen2.5:0.5b` | 閒聊回覆用的模型 |
+
+### 額外資料：Python 課程彙總資料集
+
+`data/course/python/` 是一門 Python 程式設計課程（48 位學生）的練習題題目與**彙總統計**，由課程平台管理者授權公開，不含任何個人層級資料，去識別化做法見該資料夾的 README。系統預設仍以助教提供的校務資料回答；問題提到 Python、程式、題目、隨堂考等詞時，才改查這份資料（`api/app/course.py`）。
 
 ### 系統怎麼回答
 

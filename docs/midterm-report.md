@@ -193,3 +193,6 @@ PASS  principal-012
 | §6 公開測試題 | Claude Code | 在 Docker 環境執行 `run_tests.py`、整理失敗原因 | 輸出為實際執行結果原樣貼上；cause 類 008 另以 `/chat` 確認 sources 為 S1-2-1、S2-3-1、S2-1-1；失敗的 3 題逐一對照 `spec/midterm.md`，確認護欄不在期中範圍 |
 | 切塊方式比較與選擇（`scripts/select_chunking.py`、`docs/retrieval-experiments.md` 第四輪） | Claude Code | 實作 8 類、15 種切塊方式，以及「先定規則再看結果」的選擇流程（開發／測試集分開、成對 bootstrap 信賴區間） | 15 種切法都檢查過每塊的 `covered_ids` 是真實段落 id，並抽看視窗、遞迴、語意切塊的實際內容；選擇規則在跑實驗前就寫在腳本開頭；分析中的每個數字都對照原始輸出 |
 | 問題分流（`api/app/router.py`、`scripts/eval_router.py`、`docs/router-experiments.md`） | Claude Code | 實作規則、小模型分類、欄位檢查三種分流方式；閒聊改用 0.5B、unanswerable 拒答 | 61 題評測集先於規則寫好；規則寫完後先記下 `router.py` 雜湊值才出 17 題保留集，看過結果也沒有再改規則或 prompt；分流前後以同一題實測延遲與引用段落；Docker 乾淨環境重跑公開題 12/12、my_tests 2/2、evidence 20/20 |
+| Python 課程資料集（`scripts/build_course_dataset.py`、`data/course/python/`） | Claude Code | 從課程平台資料庫備份產生彙總資料集並去識別化 | 由平台管理者授權；只讀資料表結構與筆數決定做法，不讀個人資料；產生後逐行讀完三個輸出檔，確認沒有姓名、學號、email、網址；發現「用總數相減可反推被抑制的格子」與「0／100 計分時平均會透露人數」後，改為人數四捨五入到 5、平均取整數並重新檢查；以 `git check-ignore` 與 commit 內容確認資料庫備份沒有被 commit |
+| 課程資料接入（`api/app/course.py`、分流 `course` 類） | Claude Code | 課程統計查詢、課程題目檢索、課程專用 prompt、回答數字查核 | 實際送 6 題課程問題並逐句閱讀回答，找出 8 個問題（含模型編造隨堂考分數）並逐一修正，見 `docs/course-data.md`；每題 evidence 以 pandas 獨立重跑一致；確認 78 題分流評測集沒有被誤分到 `course`；公開題仍 12/12 |
+
