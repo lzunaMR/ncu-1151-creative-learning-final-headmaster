@@ -32,7 +32,7 @@ DOCS_DIR = Path(os.environ.get("PRINCIPAL_DOCS_DIR", "/data/principal/docs"))
 if not DOCS_DIR.exists():  # 不在 Docker 內時，改用 repo 內的資料
     DOCS_DIR = Path(__file__).resolve().parents[2] / "data" / "principal" / "docs"
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")  # 不用 localhost：Windows 會先試 IPv6 ::1，每次連線多等約 2 秒
 EMBED_BACKEND = os.environ.get("EMBED_BACKEND", "ollama")
 DEFAULT_K = int(os.environ.get("RETRIEVER_K", "3"))
 
@@ -59,7 +59,37 @@ PRESETS: dict[str, dict] = {
     "hybrid-weighted": dict(chunk="para", method="weighted", embed="bge-m3", tokenizer="bigram"),
     "hybrid-jieba": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="jieba"),
     "B+rerank": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="bigram", rerank=True),
+    # --- 第二輪：不需 LLM ---
+    "dense-sent2para": dict(chunk="sentence", method="dense", embed="bge-m3"),
+    "dense-mmr": dict(chunk="para", method="dense", embed="bge-m3", mmr=0.7),
+    "A+expand": dict(chunk="para", method="dense", embed="bge-m3", expand=True),
+    "bm25-expand": dict(chunk="para", method="bm25", tokenizer="bigram", expand=True),
+    "B+expand": dict(chunk="para", method="hybrid", embed="bge-m3", tokenizer="bigram", expand=True),
+    # --- 第二輪：LLM 改寫查詢（rag_variants.py） ---
+    "hyde": dict(chunk="para", method="hyde", embed="bge-m3"),
+    "multiquery": dict(chunk="para", method="multiquery", embed="bge-m3"),
+    # --- 第二輪：bge-m3 的稀疏與多向量輸出（rag_variants.py） ---
+    "m3-sparse": dict(chunk="para", method="m3sparse"),
+    "m3-colbert": dict(chunk="para", method="m3colbert"),
+    "A+m3sparse": dict(chunk="para", method="hybrid", embed="bge-m3", fuse=("dense", "m3sparse")),
 }
+
+# 第四輪：切塊方式比較（scripts/select_chunking.py）。檢索方法都和 A 相同，只改切塊
+CHUNK_PRESETS: dict[str, dict] = {
+    "chunk-para": dict(chunk="para"),
+    "chunk-para_ctx": dict(chunk="para_ctx"),
+    "chunk-para_merge-100": dict(chunk="para_merge", size=100),
+    "chunk-sentence": dict(chunk="sentence"),
+    "chunk-section": dict(chunk="section"),
+    **{f"chunk-window-{n}-o{o}": dict(chunk="window", size=n, overlap=o) for n in (60, 120, 200) for o in (0, n // 3)},
+    "chunk-recursive-100": dict(chunk="recursive", size=100),
+    "chunk-recursive-200": dict(chunk="recursive", size=200),
+    "chunk-semantic-p30": dict(chunk="semantic", size=200, threshold=30),
+    "chunk-semantic-p50": dict(chunk="semantic", size=200, threshold=50),
+}
+for _cfg in CHUNK_PRESETS.values():
+    _cfg.update(method="dense", embed="bge-m3")
+PRESETS.update(CHUNK_PRESETS)
 
 HEADING_RE = re.compile(r"^(#{1,3})\s+(\S+)\s+(.*)$")
 PARA_ID_RE = re.compile(r"^S\d+(-\d+){2}$")
@@ -120,19 +150,102 @@ def load_paragraphs(docs_dir: Path = DOCS_DIR) -> dict[str, Paragraph]:
     return paras
 
 
-def chunk_documents(strategy: str = "para", size: int = 120, overlap: int = 40) -> list[Chunk]:
-    """回傳切塊清單。size／overlap 單位為字元，只有 window 會用到。
+def _doc_streams(paras: dict[str, Paragraph], sep: str = "\n") -> list[tuple[str, str, list[str]]]:
+    """每份文件串成一條文字，並記住每個字元屬於哪個段落：(文件代號, 文字, owner)。"""
+    by_doc: dict[str, list[Paragraph]] = {}
+    for p in paras.values():
+        by_doc.setdefault(p.doc, []).append(p)
+    out = []
+    for doc, ps in by_doc.items():
+        text, owner = "", []
+        for p in ps:
+            piece = p.text + sep
+            text += piece
+            owner += [p.id] * len(piece)
+        out.append((doc.split()[0], text, owner))
+    return out
 
-    para      一個 ### 段落一塊（標題＋內文）
-    para_ctx  同 para，但前面加上「文件 > 章節」標題，讓短段落帶有上下文
-    section   一個 ## 章節一塊（合併其下所有段落）
-    window    同一份文件內以固定字元數滑動視窗切，相鄰視窗重疊 overlap 字
+
+def _span_chunk(cid: str, text: str, owner: list[str], start: int, end: int) -> Chunk:
+    # 跨段的切塊依各段佔的字數排序：只沾到上一段尾巴時，主要段落仍排第一
+    share = Counter(owner[start:end])
+    return Chunk(cid, text[start:end].strip(), sorted(share, key=lambda pid: -share[pid]))
+
+
+def _recursive_spans(text: str, start: int, end: int, size: int, seps: tuple[str, ...]) -> list[tuple[int, int]]:
+    """遞迴切割：先用最粗的分隔符切，太長的片段再用下一層分隔符切，最後才硬切。"""
+    if end - start <= size:
+        return [(start, end)]
+    if not seps:
+        return [(i, min(i + size, end)) for i in range(start, end, size)]
+    sep, pieces, i = seps[0], [], start
+    while i < end:
+        j = text.find(sep, i, end)
+        j = end if j == -1 else j + len(sep)
+        pieces += _recursive_spans(text, i, j, size, seps[1:]) if j - i > size else [(i, j)]
+        i = j
+    return pieces
+
+
+def _merge_spans(spans: list[tuple[int, int]], size: int) -> list[tuple[int, int]]:
+    """把相鄰的小片段合併到不超過 size。"""
+    merged: list[list[int]] = []
+    for a, b in spans:
+        if merged and b - merged[-1][0] <= size:
+            merged[-1][1] = b
+        else:
+            merged.append([a, b])
+    return [(a, b) for a, b in merged]
+
+
+def _sentence_spans(text: str) -> list[tuple[int, int]]:
+    spans, i = [], 0
+    for m in re.finditer(r"[。！？；]|\n", text):
+        if text[i : m.end()].strip():
+            spans.append((i, m.end()))
+        i = m.end()
+    if text[i:].strip():
+        spans.append((i, len(text)))
+    return spans
+
+
+def chunk_documents(
+    strategy: str = "para", size: int = 120, overlap: int = 40, threshold: float = 30, embed_model: str = "bge-m3"
+) -> list[Chunk]:
+    """回傳切塊清單。size／overlap 單位為字元。
+
+    依文件結構切：
+      para        一個 ### 段落一塊（標題＋內文）
+      para_ctx    同 para，但前面加上「文件 > 章節」標題，讓短段落帶有上下文
+      para_merge  同一章節內，太短的段落與下一段合併，直到至少 size 字
+      sentence    一句一塊（small-to-big：用句子比對，回傳時展開成整段）
+      section     一個 ## 章節一塊（合併其下所有段落）
+    不看文件結構、只看文字切（跨段的切塊依字數佔比記錄 covered_ids）：
+      window      固定 size 字的滑動視窗，相鄰視窗重疊 overlap 字
+      recursive   依「空行 → 換行 → 句號 → 逗號」遞迴切到不超過 size 字，再把相鄰小片段合併
+      semantic    先切成句子，相鄰兩句的向量相似度低於該文件第 threshold 百分位數時斷開；每塊不超過 size 字
     """
     paras = load_paragraphs()
     if strategy == "para":
         return [Chunk(p.id, p.text, [p.id]) for p in paras.values()]
     if strategy == "para_ctx":
         return [Chunk(p.id, f"{p.doc} > {p.section}\n{p.text}", [p.id]) for p in paras.values()]
+    if strategy == "para_merge":
+        chunks, buf = [], []
+        items = list(paras.values())
+        for i, p in enumerate(items):
+            buf.append(p)
+            nxt = items[i + 1] if i + 1 < len(items) else None
+            if sum(len(x.text) for x in buf) >= size or not nxt or nxt.section != p.section:
+                chunks.append(Chunk("+".join(x.id for x in buf), "\n".join(x.text for x in buf), [x.id for x in buf]))
+                buf = []
+        return chunks
+    if strategy == "sentence":
+        chunks = []
+        for p in paras.values():
+            sents = [p.heading] + [x for x in re.split(r"(?<=[。！？；])|\n", p.body) if x and x.strip()]
+            chunks += [Chunk(f"{p.id}#s{i}", t.strip(), [p.id]) for i, t in enumerate(sents)]
+        return chunks
     if strategy == "section":
         groups: dict[str, list[Paragraph]] = {}
         for p in paras.values():
@@ -145,28 +258,67 @@ def chunk_documents(strategy: str = "para", size: int = 120, overlap: int = 40) 
         if not 0 <= overlap < size:
             raise ValueError("overlap 需小於 size")
         chunks = []
-        by_doc: dict[str, list[Paragraph]] = {}
-        for p in paras.values():
-            by_doc.setdefault(p.doc, []).append(p)
-        for doc, ps in by_doc.items():
-            # 把整份文件串起來，記住每個字元屬於哪個段落
-            text, owner = "", []
-            for p in ps:
-                piece = p.text + "\n"
-                text += piece
-                owner += [p.id] * len(piece)
+        for doc, text, owner in _doc_streams(paras):
             start, n = 0, 0
             while start < len(text):
                 end = min(start + size, len(text))
-                # 跨段的視窗依各段佔的字數排序：只沾到上一段尾巴時，主要段落仍排第一
-                share = Counter(owner[start:end])
-                covered = sorted(share, key=lambda pid: -share[pid])
-                chunks.append(Chunk(f"{doc.split()[0]}-w{n}", text[start:end], covered))
+                chunks.append(_span_chunk(f"{doc}-w{n}", text, owner, start, end))
                 if end == len(text):
                     break
                 start, n = end - overlap, n + 1
         return chunks
+    if strategy == "recursive":
+        chunks = []
+        for doc, text, owner in _doc_streams(paras, sep="\n\n"):
+            spans = _merge_spans(_recursive_spans(text, 0, len(text), size, ("\n\n", "\n", "。", "，")), size)
+            chunks += [_span_chunk(f"{doc}-r{n}", text, owner, a, b) for n, (a, b) in enumerate(spans)]
+        return chunks
+    if strategy == "semantic":
+        chunks = []
+        for doc, text, owner in _doc_streams(paras):
+            sents = _sentence_spans(text)
+            vecs = embed([text[a:b] for a, b in sents], embed_model)
+            sims = [_dot(vecs[i], vecs[i + 1]) for i in range(len(sents) - 1)]
+            cut = sorted(sims)[int(len(sims) * threshold / 100)] if sims else 0
+            groups, cur = [], [sents[0]]
+            for i, sp in enumerate(sents[1:]):
+                if sims[i] < cut or sp[1] - cur[0][0] > size:
+                    groups.append(cur)
+                    cur = []
+                cur.append(sp)
+            groups.append(cur)
+            chunks += [_span_chunk(f"{doc}-s{n}", text, owner, g[0][0], g[-1][1]) for n, g in enumerate(groups)]
+        return chunks
     raise ValueError(f"未知的切塊方式：{strategy}")
+
+
+# ---------------------------------------------------------------- 查詢擴展
+
+# 原文用語 → 一般人可能的說法。只依文件用語整理，寫於難題評測集（tests/retrieval_eval_hard.jsonl）之前；
+# 但撰寫者看過原本 16 題，對那 16 題的結果會偏樂觀
+SYNONYMS: dict[str, list[str]] = {
+    "代理教師": ["代課", "代課老師", "新老師", "換老師"],
+    "育嬰留職停薪": ["育嬰假", "請長假", "留停", "請假"],
+    "任課教師": ["老師", "授課老師"],
+    "學習扶助": ["補救教學", "課後輔導", "補強", "輔導班", "補習"],
+    "段考": ["考試", "期中考", "期末考", "月考"],
+    "全英語授課": ["全英文", "英文上課", "不用中文"],
+    "英語": ["英文"],
+    "晨讀": ["閱讀", "看書", "課外書", "讀書"],
+    "實驗室": ["實驗教室", "設備", "教室"],
+    "補充教材": ["講義", "額外教材", "參考書"],
+    "讀者劇場": ["英文比賽", "話劇", "戲劇", "表演"],
+    "書面通知": ["通知家長", "告知家長", "發通知"],
+    "教學研究會": ["教研會", "科會", "開會"],
+    "篩選": ["名單", "挑選", "資格"],
+    "會考": ["國中會考", "升學考試"],
+}
+
+
+def expand_query(query: str) -> str:
+    """問題裡出現一般說法時，在後面補上原文用語。"""
+    extra = [formal for formal, casual in SYNONYMS.items() if formal not in query and any(c in query for c in casual)]
+    return query + (" " + " ".join(extra) if extra else "")
 
 
 # ---------------------------------------------------------------- 斷詞與 BM25
@@ -283,10 +435,11 @@ _indexes: dict[tuple, Index] = {}
 
 def get_index(cfg: dict) -> Index:
     """同一組（切塊方式、嵌入模型）只建一次索引，放在記憶體。"""
-    key = (cfg["chunk"], cfg.get("embed"), EMBED_BACKEND)
+    chunk_args = {k: cfg[k] for k in ("size", "overlap", "threshold") if k in cfg}
+    key = (cfg["chunk"], tuple(sorted(chunk_args.items())), cfg.get("embed"), EMBED_BACKEND)
     if key not in _indexes:
         t0 = time.perf_counter()
-        idx = Index(chunk_documents(cfg["chunk"]))
+        idx = Index(chunk_documents(cfg["chunk"], embed_model=cfg.get("embed") or "bge-m3", **chunk_args))
         if cfg.get("embed"):
             idx.vectors = embed([c.text for c in idx.chunks], cfg["embed"])
         idx.build_seconds = time.perf_counter() - t0
@@ -312,35 +465,55 @@ def _minmax(xs: list[float]) -> list[float]:
     return [(x - lo) / (hi - lo) if hi > lo else 0.0 for x in xs]
 
 
+def _method_scores(method: str, query: str, cfg: dict, idx: Index) -> list[float]:
+    """單一方法對每個切塊的分數。dense、bm25 在這裡；其餘實驗方法在 rag_variants.py。"""
+    if method == "dense":
+        q = embed([query], cfg["embed"])[0]
+        return [_dot(q, v) for v in idx.vectors]
+    if method == "bm25":
+        return idx.bm25[cfg["tokenizer"]].scores(tokenize(query, cfg["tokenizer"]))
+    from . import rag_variants  # 需要 transformers，只在本機實驗載入
+
+    return rag_variants.scores(method, query, cfg, idx)
+
+
+def mmr(order: list[int], vectors: list[list[float]], rel: list[float], lam: float, n: int = 10) -> list[int]:
+    """Maximal Marginal Relevance：每次挑「相關但和已選的不像」的切塊，讓結果涵蓋不同段落。"""
+    pool, picked = order[:n], []
+    while pool:
+        best = max(
+            pool,
+            key=lambda i: lam * rel[i] - (1 - lam) * max((_dot(vectors[i], vectors[j]) for j in picked), default=0),
+        )
+        picked.append(best)
+        pool.remove(best)
+    return picked + order[n:]
+
+
 def rank_chunks(query: str, cfg: dict) -> list[tuple[Chunk, float]]:
     """依設定把所有切塊排序，回傳 (切塊, 分數)，分數越大越相關。"""
     idx = get_index(cfg)
     n = len(idx.chunks)
     method = cfg["method"]
+    if cfg.get("expand"):
+        query = expand_query(query)
 
     def by(scores):
         return sorted(range(n), key=lambda i: -scores[i])
 
-    if method in ("dense", "hybrid", "weighted"):
-        q = embed([query], cfg["embed"])[0]
-        dense = [_dot(q, v) for v in idx.vectors]
-    if method in ("bm25", "hybrid", "weighted"):
-        sparse = idx.bm25[cfg["tokenizer"]].scores(tokenize(query, cfg["tokenizer"]))
-
-    if method == "dense":
-        scores = dense
-    elif method == "bm25":
-        scores = sparse
-    elif method == "hybrid":
-        fused = rrf([by(dense), by(sparse)])
+    if method == "hybrid":
+        fused = rrf([by(_method_scores(m, query, cfg, idx)) for m in cfg.get("fuse", ("dense", "bm25"))])
         scores = [fused[i] for i in range(n)]
     elif method == "weighted":
         alpha = cfg.get("alpha", 0.5)
-        scores = [alpha * d + (1 - alpha) * s for d, s in zip(_minmax(dense), _minmax(sparse))]
+        dense, sparse = (_minmax(_method_scores(m, query, cfg, idx)) for m in ("dense", "bm25"))
+        scores = [alpha * d + (1 - alpha) * s for d, s in zip(dense, sparse)]
     else:
-        raise ValueError(f"未知的檢索方法：{method}")
+        scores = _method_scores(method, query, cfg, idx)
 
     order = by(scores)
+    if cfg.get("mmr"):
+        order = mmr(order, idx.vectors, scores, cfg["mmr"])
     if cfg.get("rerank"):
         top_n = order[: cfg.get("rerank_n", 10)]
         rs = rerank_scores(query, [idx.chunks[i].text for i in top_n])

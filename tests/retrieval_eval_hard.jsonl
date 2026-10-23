@@ -1,0 +1,12 @@
+{"id": "hard-01", "type": "比較", "question": "七年級和八年級的數學，這學期教的內容有什麼不同？", "expect_ids": ["S2-2-1", "S2-2-2"]}
+{"id": "hard-02", "type": "否定", "question": "哪些科目沒有開學習扶助班？", "expect_ids": ["S4-1-2"]}
+{"id": "hard-03", "type": "例外", "question": "九年級的段考時間和其他年級一樣嗎？", "expect_ids": ["S1-2-3"]}
+{"id": "hard-04", "type": "數值推論", "question": "上學期考 62 分的學生能參加學習扶助嗎？", "expect_ids": ["S4-1-3"]}
+{"id": "hard-05", "type": "條件", "question": "學期中才發現跟不上的學生，還能加入補救教學嗎？", "expect_ids": ["S4-2-2", "S2-3-2"]}
+{"id": "hard-06", "type": "跨文件推論", "question": "805 班的家長應該會收到什麼通知？", "expect_ids": ["S1-4-1", "S1-2-1"]}
+{"id": "hard-07", "type": "抽象", "question": "有哪些措施是先試辦、之後再決定要不要擴大？", "expect_ids": ["S1-2-2"]}
+{"id": "hard-08", "type": "誰負責", "question": "全英語授課的成效最後由誰來檢討？", "expect_ids": ["S1-2-2", "S3-2-1"]}
+{"id": "hard-09", "type": "抽象", "question": "這學期學校有哪些硬體設施的改變？", "expect_ids": ["S1-3-1"]}
+{"id": "hard-10", "type": "細節", "question": "數學領域的會議，代理老師有出席嗎？", "expect_ids": ["S2-1-1"]}
+{"id": "hard-11", "type": "口語", "question": "補救教學的錢從哪裡來？", "expect_ids": ["S4-3-2"]}
+{"id": "hard-12", "type": "口語", "question": "九年級英文是不是變難了？", "expect_ids": ["S3-2-2"]}

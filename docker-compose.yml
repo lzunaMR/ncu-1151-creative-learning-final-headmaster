@@ -1,15 +1,42 @@
 # Ollama 不放在 compose 裡，請直接安裝在電腦上（https://ollama.com/download）。
 # api 透過 host.docker.internal 連到電腦上的 Ollama。
+#
+# 不需要 .env 也能啟動：下列變數都有預設值。要改設定時，可以寫在 .env（compose 會自動讀取），
+# 或直接在指令前設定，例如 PowerShell：$env:RETRIEVER_VERSION="B"; docker compose up -d
+# 固定專案名稱：資料夾名稱若是中文，compose 會因專案名稱為空而無法啟動
+name: headmaster-ai
+
 services:
   api:
     build: ./api
-    env_file: .env
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      LOCAL_MODEL: ${LOCAL_MODEL:-qwen2.5:3b}
+      RETRIEVER_VERSION: ${RETRIEVER_VERSION:-A}
+      RETRIEVER_K: ${RETRIEVER_K:-3}
+      EMBED_BACKEND: ${EMBED_BACKEND:-ollama}
+      HISTORY_TURNS: ${HISTORY_TURNS:-6}
+      # 問題分流：rule（預設）／llm／fields／off；閒聊用 CHAT_MODEL，llm／fields 用 ROUTER_MODEL 分類
+      ROUTER_MODE: ${ROUTER_MODE:-rule}
+      ROUTER_MODEL: ${ROUTER_MODEL:-qwen2.5:3b}
+      CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:0.5b}
+      # 啟動時若 Ollama 缺模型就自動下載；設 0 可關閉
+      OLLAMA_AUTO_PULL: ${OLLAMA_AUTO_PULL:-1}
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Linux 需要這行；Windows / Mac 本來就有
     volumes:
       - ./data:/data:ro
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      # 啟動時會建索引（以及第一次自動下載模型），給足時間
+      start_period: 10m
+      start_interval: 3s
+    restart: unless-stopped
 
   ui:
     build: ./ui
@@ -18,4 +45,6 @@ services:
     ports:
       - "8501:8501"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
