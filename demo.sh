@@ -9,7 +9,7 @@
 # 會做的事：檢查 Docker 與 Ollama → 下載缺少的模型 → docker compose up --build → 等待就緒 → 開啟瀏覽器
 set -euo pipefail
 cd "$(dirname "$0")"
-MODELS=("qwen2.5:3b" "bge-m3")
+MODELS=("qwen2.5:3b" "qwen2.5:0.5b" "bge-m3")
 
 step() { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 fail() { printf '\n\033[31m[錯誤] %s\033[0m\n' "$1"; exit 1; }

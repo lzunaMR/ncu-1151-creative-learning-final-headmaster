@@ -10,21 +10,41 @@
 | --- | --- | --- | --- |
 | 生成回覆 | `qwen2.5:3b` | 地端 Ollama（`route` 固定為 `local`） | `LOCAL_MODEL`；記憶體 8 GB 以下可改 `qwen2.5:1.5b` |
 | 檢索嵌入 | `bge-m3` | 地端 Ollama | `EMBED_BACKEND=ollama` |
+| 閒聊回覆 | `qwen2.5:0.5b` | 地端 Ollama | `CHAT_MODEL`；問題分流判定為閒聊時使用，不查資料，回覆約 1–2 秒 |
 
 本組不使用雲端 API，不需要任何 key，也不需要建立 `.env`。
 
 ### Demo（助教用）
 
-前提：已安裝並開啟 **Docker Desktop** 與 **Ollama**。在 repo 根目錄執行一行：
+前提：已安裝並開啟 **Docker Desktop** 與 **Ollama**（模型不必先下載，腳本會補）。不需要 `.env`、不需要任何 API key。
+
+**1. 下載專案**
+
+```bash
+git clone https://github.com/lzunaMR/ncu-1151-creative-learning-final-headmaster.git
+cd ncu-1151-creative-learning-final-headmaster
+```
+
+**2. 啟動（一行）**
 
 | 系統 | 指令 |
 | --- | --- |
 | Windows（PowerShell） | `powershell -ExecutionPolicy Bypass -File .\demo.ps1` |
 | macOS／Linux | `./demo.sh` |
 
-腳本會依序：檢查 Docker 與 Ollama → 讓 Ollama 接受容器連線（Windows 自動設定 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama）→ 下載缺少的模型（`qwen2.5:3b`、`bge-m3`）→ `docker compose up -d --build` → 等待就緒 → 開啟 http://localhost:8501 。
+完成後瀏覽器會自動開啟 http://localhost:8501 。
 
-實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：乾淨資料夾第一次執行（含建置映像）79 秒完成，之後重跑約 10 秒。
+**3.（選用）一行驗證整套系統**
+
+```bash
+python scripts/check_system.py
+```
+
+會送 11 類問題（閒聊與多輪記憶、成績分析與追問、原因題、只查文件、護欄拒答、Python 課程資料），逐項檢查回傳格式與內容，最後印出「11/11 通過」。只用 Python 標準函式庫，不必安裝套件。公開題：`python scripts/run_tests.py tests/principal.jsonl`。
+
+腳本會依序：檢查 Docker 與 Ollama → 讓 Ollama 接受容器連線（Windows 自動設定 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama）→ 下載缺少的模型（`qwen2.5:3b`、`qwen2.5:0.5b`、`bge-m3`）→ `docker compose up -d --build` → 等待就緒 → 開啟 http://localhost:8501 。
+
+實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：從 GitHub 重新 clone、刪除所有本機映像後第一次執行（含建置映像）63 秒完成，之後重跑約 15 秒；`check_system.py` 11/11、公開題 12/12。
 
 - 切換到版本 B：`.\demo.ps1 -Version B`（macOS／Linux：`./demo.sh B`），介面「Agent 思考步驟」中的 retrieve 會顯示「版本B」
 - 關閉：`.\demo.ps1 -Stop`（`./demo.sh stop`）
@@ -40,6 +60,9 @@
 | 805 班的數學成績變化，跟本學期的人事異動有沒有關係？ | Sources 引用 S1-2-1、S2-3-1（代理教師），原因標明為推測 |
 | 這學期學校有哪些硬體設施的改變？ | 版本 A 與 B 的差異：A 的 Sources 有 S1-3-1，回答「七年級自然科新實驗室啟用」；切到 B 後 S1-3-1 排不進前 3（BM25 和原文「實驗室整修」沒有共用詞），模型回答「文件沒有提到硬體設施的改變」 |
 | 給我三個校務改善建議，要附上數據 | 每項建議都附 evidence |
+| 哪位老師教得最差？ | 問題分流判定為 unanswerable，護欄觸發 `refuse`，說明資料沒有教師欄位 |
+| Python 課哪一題最多人卡關？ | 分流判定為 `course`，改查 Python 課程彙總資料（`data/course/python/`）；Sources 是被點名的題目，見 `docs/course-data.md` |
+| 你好，你可以幫我做什麼？ | 分流判定為閒聊，改用 `qwen2.5:0.5b` 回覆，不查資料（「Agent 思考步驟」可看到 router 與使用的模型） |
 
 ### 設定（選用，寫在 `.env` 或指令前的環境變數）
 
@@ -51,6 +74,13 @@
 | `EMBED_BACKEND` | `ollama` | 檢索嵌入來源；`st` 僅供本機實驗（需 `api/requirements-dev.txt`） |
 | `HISTORY_TURNS` | `6` | 送進模型的最近幾輪對話 |
 | `OLLAMA_AUTO_PULL` | `1` | 啟動時自動下載缺少的模型；`0` 關閉 |
+| `ROUTER_MODE` | `rule` | 問題分流：`rule` 關鍵字、`llm` 小模型直接分類、`fields` 小模型列出需要的資訊再對照、`off` 不分流（護欄固定放行）。比較見 `docs/router-experiments.md` |
+| `ROUTER_MODEL` | `qwen2.5:3b` | `llm`／`fields` 分類用的模型 |
+| `CHAT_MODEL` | `qwen2.5:0.5b` | 閒聊回覆用的模型 |
+
+### 額外資料：Python 課程彙總資料集
+
+`data/course/python/` 是一門 Python 程式設計課程（48 位學生）的練習題題目與**彙總統計**，由課程平台管理者授權公開，不含任何個人層級資料，去識別化做法見該資料夾的 README。系統預設仍以助教提供的校務資料回答；問題提到 Python、程式、題目、隨堂考等詞時，才改查這份資料（`api/app/course.py`）。
 
 ### 系統怎麼回答
 
@@ -62,7 +92,7 @@
 
 ### 已知限制
 
-- 護欄尚未實作（不在期中範圍），`guardrail` 固定回 `pass`，因此 `tests/principal.jsonl` 的 unanswerable 三題（010～012）不會通過。
+- 護欄由問題分流（`api/app/router.py`）判定：問到資料沒有的欄位（教師、出缺席、家庭背景等）時回 `refuse`。預設的關鍵字規則在公開題與自訂題都沒有誤拒，但對沒見過的問法偵測率低（保留集 6 題只抓到 0 題），見 `docs/router-experiments.md`。
 - 對話歷史存在記憶體，API 重啟後就會清空。
 - Ollama 連不到時，回覆只列資料事實，並在 answer 與 trace 註明生成失敗。
 - 成績比較只看同一年級標籤；跨學年（例如 1132 比 1141）時同一年級是不同屆學生，班級代號也會改變，回覆會加註並略過班級比較。

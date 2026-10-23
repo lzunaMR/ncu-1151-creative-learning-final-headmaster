@@ -5,3 +5,8 @@ __pycache__/
 
 # 課程簡報與講義不公開
 *.pdf
+
+# 資料庫備份含個人資料，不可 commit（公開的彙總資料由 scripts/build_course_dataset.py 產生）
+*.sql
+*.sql.gz
+*.dump

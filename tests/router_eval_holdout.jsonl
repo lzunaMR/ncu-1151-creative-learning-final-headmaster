@@ -1,0 +1,17 @@
+{"id": "holdout-01", "question": "哪位導師最受學生歡迎？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-02", "question": "學生的出勤狀況怎麼樣？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-03", "question": "家長的教育程度會影響孩子的成績嗎？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-04", "question": "原住民學生的成績表現如何？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-05", "question": "哪一班的學生上課最不專心？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-06", "question": "數學老師的年資跟學生成績有關嗎？", "label": "unanswerable", "src": "保留集"}
+{"id": "holdout-07", "question": "嗨～", "label": "chitchat", "src": "保留集"}
+{"id": "holdout-08", "question": "你是什麼系統？", "label": "chitchat", "src": "保留集"}
+{"id": "holdout-09", "question": "好的，了解，謝謝！", "label": "chitchat", "src": "保留集"}
+{"id": "holdout-10", "question": "你好，請問八年級數學平均多少？", "label": "scores", "src": "保留集"}
+{"id": "holdout-11", "question": "803 班這學期的英文怎麼樣？", "label": "scores", "src": "保留集"}
+{"id": "holdout-12", "question": "哪個科目全校表現最好？", "label": "scores", "src": "保留集"}
+{"id": "holdout-13", "question": "新實驗室是哪裡整修的？", "label": "docs", "src": "保留集"}
+{"id": "holdout-14", "question": "讀者劇場比賽什麼時候舉行？", "label": "docs", "src": "保留集"}
+{"id": "holdout-15", "question": "家長會在會議中提了什麼要求？", "label": "docs", "src": "保留集"}
+{"id": "holdout-16", "question": "805 班成績下滑，代理老師是不是原因之一？", "label": "cause", "src": "保留集"}
+{"id": "holdout-17", "question": "為什麼九年級英文平均變低了？", "label": "cause", "src": "保留集"}
