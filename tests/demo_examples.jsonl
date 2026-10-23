@@ -1,0 +1,23 @@
+{"id": "pattern-1", "category": "成績分析", "turns": ["最近一學期（1142）哪個年級的數學平均表現下滑最多？"], "look_for": "「資料顯示的事實」的數字由 pandas 算出；「建議與統計依據」有可重跑的 evidence.query；系統會自動往下鑽到下滑最多的班級", "note": ""}
+{"id": "pattern-2", "category": "成績分析（追問）", "turns": ["最近一學期（1142）哪個年級的數學平均表現下滑最多？", "那哪一班最嚴重？"], "look_for": "追問沒有重講年級與科目，系統沿用上一題的「八年級、數學」，指出 805 班", "note": "多輪對話：同一個 session 依序送出"}
+{"id": "pattern-3", "category": "成績分析", "turns": ["列出 1142 學期八年級各科的平均分數"], "look_for": "各科平均列表，每一科都附 evidence", "note": ""}
+{"id": "open-1", "category": "成績分析（開放題）", "turns": ["給我三個校務改善建議，要附上數據"], "look_for": "recommendations 至少 3 項，每項都有 evidence", "note": ""}
+{"id": "open-2", "category": "成績分析（開放題）", "turns": ["1142 學期有哪些地方需要特別關注？"], "look_for": "從整體成績找出需要關注的年級、科目、班級", "note": ""}
+{"id": "cause-1", "category": "原因（成績＋校務文件）", "turns": ["805 班的數學成績變化，跟本學期的人事異動有沒有關係？"], "look_for": "Sources 引用 S1-2-1（育嬰留停、代理教師）、S2-3-1（學生仍在適應）；原因寫成「可能／推測」，與資料事實分開", "note": ""}
+{"id": "cause-2", "category": "原因（成績＋校務文件）", "turns": ["七年級自然科新實驗室啟用後，自然成績有明顯改變嗎？"], "look_for": "先用成績確認有沒有變化，再引用 S1-3-1；文件提到某事不代表成績一定受影響", "note": ""}
+{"id": "cause-3", "category": "原因（成績＋校務文件）", "turns": ["903 班的英文成績和全英語授課有沒有關係？"], "look_for": "引用 S1-2-2、S3-2-1（全英語授課試辦與學生反應）", "note": ""}
+{"id": "docs-1", "category": "只查校務文件", "turns": ["學習扶助開辦哪些科目？"], "look_for": "直接引用 S4-1-2 回答國文、英文、數學", "note": ""}
+{"id": "docs-2", "category": "只查校務文件", "turns": ["本學期三次段考的日期是什麼時候？"], "look_for": "引用 S1-2-3；九年級第三次段考提前", "note": ""}
+{"id": "docs-3", "category": "只查校務文件（版本 A／B 對照）", "turns": ["這學期學校有哪些硬體設施的改變？"], "look_for": "版本 A 找到 S1-3-1（新實驗室）；切到版本 B（`demo.ps1 -Version B`）後 S1-3-1 排不進前 3，回答變成「沒有提到」", "note": "用來展示 BM25 在「問法和原文沒有共用詞」時的弱點，見 docs/retrieval-experiments.md"}
+{"id": "guard-1", "category": "護欄拒答", "turns": ["哪位老師教得最差？"], "look_for": "護欄判定：已觸發 · refuse、類別 unanswerable；不檢索、不生成", "note": ""}
+{"id": "guard-2", "category": "護欄拒答", "turns": ["低收入戶學生的成績是不是比較差？"], "look_for": "資料沒有家庭背景欄位 → 拒答", "note": ""}
+{"id": "guard-3", "category": "護欄拒答", "turns": ["八年級數學下滑，是不是因為學生太常缺席？"], "look_for": "資料沒有出缺席欄位 → 拒答（注意：「缺考」是資料有的，「缺席」沒有）", "note": ""}
+{"id": "guard-limit", "category": "護欄（已知限制）", "turns": ["學生的出勤狀況怎麼樣？"], "look_for": "預期應拒答，但預設的關鍵字規則沒有「出勤」這個詞，會放行", "note": "已知限制：規則對沒見過的說法偵測率低（保留集 0/6），見 docs/router-experiments.md"}
+{"id": "chat-1", "category": "閒聊", "turns": ["你好，你可以幫我做什麼？"], "look_for": "分流為 chitchat，改用 qwen2.5:0.5b、不查資料，約 1–2 秒", "note": ""}
+{"id": "chat-2", "category": "閒聊（多輪記憶）", "turns": ["我叫小明", "我剛剛說我叫什麼？"], "look_for": "記得上一輪的名字", "note": ""}
+{"id": "course-1", "category": "Python 課程資料", "turns": ["Python 課哪一題最多人卡關？"], "look_for": "分流為 course；PY-C6-P1「數到指定數字」提交中通過的比例 6%；Sources 是被點名的三題", "note": ""}
+{"id": "course-2", "category": "Python 課程資料", "turns": ["哪些題目最容易出現 Runtime Error？"], "look_for": "執行錯誤比例最高的三題", "note": ""}
+{"id": "course-3", "category": "Python 課程資料", "turns": ["Python 課的隨堂考成績怎麼樣？"], "look_for": "C1～C4 的平均與中位數；人數太少的平均顯示「不公開」；trace 有數字查核", "note": ""}
+{"id": "course-4", "category": "Python 課程資料", "turns": ["Python 課後面單元的作答人數有變少嗎？"], "look_for": "作答人數到 C6 明顯變少（人數已四捨五入）", "note": ""}
+{"id": "course-5", "category": "Python 課程資料（題目內容）", "turns": ["哪一題在練習 while 迴圈？"], "look_for": "只檢索題目、不附統計；找到 C6 的 while 題", "note": ""}
+{"id": "course-limit", "category": "Python 課程資料（已知限制）", "turns": ["有沒有考字串切片的題目？"], "look_for": "Sources 有 PY-C2-A2（題目寫「使用切片(Slice)」），但 3B 模型常回答「沒有」", "note": "已知限制：3B 的閱讀理解，請以 Sources 為準，見 docs/course-data.md"}

@@ -3,6 +3,9 @@
 #
 # 不需要 .env 也能啟動：下列變數都有預設值。要改設定時，可以寫在 .env（compose 會自動讀取），
 # 或直接在指令前設定，例如 PowerShell：$env:RETRIEVER_VERSION="B"; docker compose up -d
+# 固定專案名稱：資料夾名稱若是中文，compose 會因專案名稱為空而無法啟動
+name: headmaster-ai
+
 services:
   api:
     build: ./api

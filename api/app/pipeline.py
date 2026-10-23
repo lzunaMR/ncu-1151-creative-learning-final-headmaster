@@ -155,7 +155,37 @@ def tidy(model_text: str) -> str:
     """模型有時會模仿歷史中的回答格式，重抄「【資料顯示的事實】…【解讀與建議】」；只留最後一段解讀。"""
     if "【解讀與建議】" in model_text:
         model_text = model_text.rsplit("【解讀與建議】", 1)[1]
+    # 上一輪附的 ⚠ 警告會留在對話歷史裡，模型有時照抄，這裡拿掉（本輪的警告由下面的查核重新產生）
+    model_text = "\n".join(l for l in model_text.splitlines() if not l.lstrip().startswith("⚠"))
     return model_text.replace("【資料顯示的事實】", "").strip()
+
+
+def _bigrams(text: str) -> set[str]:
+    return set(retrieval.tokenize(text))
+
+
+def misattributed(model_text: str, sources: list[Source]) -> list[tuple[str, str]]:
+    """引用對齊：取 [id] 所標註的那句話，看它和哪一段原文的用字最像。
+    [id] 在句尾就看前一句；在句首（例如「。[S4-1-3] 文件提到……」）就看後一句。
+    只在另一段明顯更像時才回報（共同二元組至少 6 個，且是被引用段落的 3 倍以上），
+    因為一個引用常涵蓋兩句、用到兩段，太敏感會誤報。回傳 [(被引用的 id, 較像的 id)]。"""
+    texts = {src.id: _bigrams(src.text) for src in sources}
+    out = []
+    for m in CITE_RE.finditer(model_text):
+        cid = m.group(1)
+        if cid not in texts:
+            continue
+        pre = model_text[: m.start()].rstrip(" ")
+        if not pre or pre[-1] in "。！？\n：:":
+            sentence = re.split(r"[。！？\n]", model_text[m.end() :].lstrip(" ，,"))[0][:80]
+        else:
+            sentence = re.split(r"[。！？\n]", pre)[-1][-80:]
+        words = _bigrams(sentence)
+        overlap = {sid: len(words & bg) for sid, bg in texts.items()}
+        best = max(overlap, key=overlap.get)
+        if best != cid and overlap[best] >= 6 and overlap[best] >= 3 * max(overlap[cid], 1) and (cid, best) not in out:
+            out.append((cid, best))
+    return out
 
 
 def check_citations(model_text: str, sources: list[Source], trace: list[TraceStep]) -> str:
@@ -165,6 +195,10 @@ def check_citations(model_text: str, sources: list[Source], trace: list[TraceSte
     trace.append(TraceStep(step="citation_check", detail=f"引用 {', '.join(cited) or '無'}；不在 sources 中：{', '.join(bad) or '無'}"))
     if bad:
         model_text += f"\n\n⚠ 引用的 {', '.join(bad)} 不在這次檢索到的段落中，該處說明可能沒有依據，請對照 Sources。"
+    wrong = misattributed(model_text, sources)
+    trace.append(TraceStep(step="citation_align", detail="；".join(f"[{a}] 處的說明較像 {b}" for a, b in wrong) or "引用與內容一致"))
+    if wrong:
+        model_text += "\n\n⚠ " + "；".join(f"[{a}] 前面的說明和 {b} 的內容較吻合，引用可能標錯" for a, b in wrong) + "，請對照 Sources。"
     return model_text
 
 
