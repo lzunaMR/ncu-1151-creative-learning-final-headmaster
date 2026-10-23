@@ -195,4 +195,5 @@ PASS  principal-012
 | 問題分流（`api/app/router.py`、`scripts/eval_router.py`、`docs/router-experiments.md`） | Claude Code | 實作規則、小模型分類、欄位檢查三種分流方式；閒聊改用 0.5B、unanswerable 拒答 | 61 題評測集先於規則寫好；規則寫完後先記下 `router.py` 雜湊值才出 17 題保留集，看過結果也沒有再改規則或 prompt；分流前後以同一題實測延遲與引用段落；Docker 乾淨環境重跑公開題 12/12、my_tests 2/2、evidence 20/20 |
 | Python 課程資料集（`scripts/build_course_dataset.py`、`data/course/python/`） | Claude Code | 從課程平台資料庫備份產生彙總資料集並去識別化 | 由平台管理者授權；只讀資料表結構與筆數決定做法，不讀個人資料；產生後逐行讀完三個輸出檔，確認沒有姓名、學號、email、網址；發現「用總數相減可反推被抑制的格子」與「0／100 計分時平均會透露人數」後，改為人數四捨五入到 5、平均取整數並重新檢查；以 `git check-ignore` 與 commit 內容確認資料庫備份沒有被 commit |
 | 課程資料接入（`api/app/course.py`、分流 `course` 類） | Claude Code | 課程統計查詢、課程題目檢索、課程專用 prompt、回答數字查核 | 實際送 6 題課程問題並逐句閱讀回答，找出 8 個問題（含模型編造隨堂考分數）並逐一修正，見 `docs/course-data.md`；每題 evidence 以 pandas 獨立重跑一致；確認 78 題分流評測集沒有被誤分到 `course`；公開題仍 12/12 |
+| 整套系統檢查（`scripts/check_system.py`）、引用查核 | Claude Code | 撰寫 11 類情境檢查；新增引用查核與追問格式修正 | 從 GitHub 重新 clone 到乾淨資料夾、刪除本機映像後執行 `demo.ps1`，`check_system.py` 11/11、公開題 12/12、evidence 20/20；另在瀏覽器逐一展開 Sources、護欄判定、Agent 思考步驟、路由、建議與統計依據五個欄位確認內容；讀完每則回答，發現模型引用了沒有檢索到的段落與重複格式後才加入修正 |
 

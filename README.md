@@ -16,16 +16,35 @@
 
 ### Demo（助教用）
 
-前提：已安裝並開啟 **Docker Desktop** 與 **Ollama**。在 repo 根目錄執行一行：
+前提：已安裝並開啟 **Docker Desktop** 與 **Ollama**（模型不必先下載，腳本會補）。不需要 `.env`、不需要任何 API key。
+
+**1. 下載專案**
+
+```bash
+git clone https://github.com/lzunaMR/ncu-1151-creative-learning-final-headmaster.git
+cd ncu-1151-creative-learning-final-headmaster
+```
+
+**2. 啟動（一行）**
 
 | 系統 | 指令 |
 | --- | --- |
 | Windows（PowerShell） | `powershell -ExecutionPolicy Bypass -File .\demo.ps1` |
 | macOS／Linux | `./demo.sh` |
 
+完成後瀏覽器會自動開啟 http://localhost:8501 。
+
+**3.（選用）一行驗證整套系統**
+
+```bash
+python scripts/check_system.py
+```
+
+會送 11 類問題（閒聊與多輪記憶、成績分析與追問、原因題、只查文件、護欄拒答、Python 課程資料），逐項檢查回傳格式與內容，最後印出「11/11 通過」。只用 Python 標準函式庫，不必安裝套件。公開題：`python scripts/run_tests.py tests/principal.jsonl`。
+
 腳本會依序：檢查 Docker 與 Ollama → 讓 Ollama 接受容器連線（Windows 自動設定 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama）→ 下載缺少的模型（`qwen2.5:3b`、`qwen2.5:0.5b`、`bge-m3`）→ `docker compose up -d --build` → 等待就緒 → 開啟 http://localhost:8501 。
 
-實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：乾淨資料夾第一次執行（含建置映像）79 秒完成，之後重跑約 10 秒。
+實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：從 GitHub 重新 clone、刪除所有本機映像後第一次執行（含建置映像）63 秒完成，之後重跑約 15 秒；`check_system.py` 11/11、公開題 12/12。
 
 - 切換到版本 B：`.\demo.ps1 -Version B`（macOS／Linux：`./demo.sh B`），介面「Agent 思考步驟」中的 retrieve 會顯示「版本B」
 - 關閉：`.\demo.ps1 -Stop`（`./demo.sh stop`）
