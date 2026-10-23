@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "api"))
 
 from app import router  # noqa: E402
 
-ACTION = {"unanswerable": "拒答", "chitchat": "閒聊"}
+ACTION = {"unanswerable": "拒答", "chitchat": "閒聊", "course": "課程資料"}
 
 
 def action(label: str) -> str:

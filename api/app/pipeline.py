@@ -29,7 +29,7 @@ from collections import defaultdict
 
 import httpx
 
-from . import analytics, retrieval, router
+from . import analytics, course, retrieval, router
 from .schemas import ChatResponse, Guardrail, Source, TraceStep
 
 
@@ -178,6 +178,29 @@ def handle(session_id: str, message: str) -> ChatResponse:
             answer = f"（地端模型目前無法連線：{e}）"
         history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
         return ChatResponse(answer=answer, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
+
+    if route is not None and route.label == "course":
+        # Python 課程資料：課程統計＋課程題目檢索，取代校務的成績分析與文件檢索
+        ca = course.answer(message, trace)
+        analysis = analytics.Analysis(used=True, facts=ca.facts[:-1], notes=ca.facts[-1:], recommendations=ca.recommendations)
+        messages = build_messages(message, history, analysis, ca.sources)
+        messages[0]["content"] = (
+            messages[0]["content"].replace(SYSTEM_PROMPT, course.COURSE_PROMPT, 1).replace("校務文件：", "課程題目：", 1)
+        )
+        try:
+            model_text = generate(messages, trace)
+        except GenerationError as e:
+            model_text = f"（地端模型目前無法連線，未產生文字說明：{e}）"
+        bad = course.unsupported_numbers(model_text, ca.facts, ca.sources)
+        if bad:
+            model_text += f"\n\n⚠ 以上說明中的數字 {', '.join(bad)} 不在資料中，可能是模型自行產生的，請以「資料顯示的事實」為準。"
+        trace.append(TraceStep(step="number_check", detail=f"模型回答中不在資料裡的數字：{', '.join(bad) or '無'}"))
+        answer = compose_answer(analysis, model_text)
+        history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
+        return ChatResponse(
+            answer=answer, route="local", guardrail=guardrail, sources=ca.sources, trace=trace,
+            recommendations=ca.recommendations,
+        )
 
     analysis = analyze_scores(session_id, message, trace)
     sources = retrieve(message, trace)

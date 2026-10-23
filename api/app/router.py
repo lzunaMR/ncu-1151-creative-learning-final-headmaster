@@ -6,6 +6,7 @@
     cause         問成績變化的原因        → 成績分析＋檢索 → LOCAL_MODEL（3B）生成
     chitchat      打招呼、道謝、閒聊      → 不查資料，CHAT_MODEL（0.5B）回覆，比較快
     unanswerable  需要資料裡沒有的欄位    → 護欄拒答（refuse），不生成
+    course        問 Python 課程資料      → 課程題目檢索＋課程統計（course.py）→ LOCAL_MODEL 生成
 scores／docs／cause 走同一條路（成績分析會自己判斷要不要查成績），分錯之間不影響結果；
 真正有代價的是錯成 unanswerable（誤拒）與錯成 chitchat（漏查資料）。
 
@@ -28,7 +29,7 @@ import httpx
 
 from .schemas import TraceStep
 
-LABELS = ("scores", "docs", "cause", "chitchat", "unanswerable")
+LABELS = ("scores", "docs", "cause", "chitchat", "unanswerable", "course")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").strip().rstrip("/")
 ROUTER_MODE = os.environ.get("ROUTER_MODE", "rule").strip()
 # 只有 ROUTER_MODE=llm／fields 才用到；實驗中 3B 最好（docs/router-experiments.md）
@@ -46,6 +47,12 @@ NO_FIELD_RE = re.compile(
     r"|補習|讀書.{0,4}(小時|時間)|睡眠|手機"
 )
 CHAT_RE = re.compile(r"^(你好|您好|哈囉|嗨|hi|hello|早安|午安|晚安|謝謝|感謝|辛苦了)|你是誰|你(可以|能)(幫我)?做什麼|^我(叫|是)|我剛剛說", re.I)
+# Python 課程資料（data/course/python/）。只有規則會分出這一類；llm／fields 的 prompt 沒有這一類
+COURSE_RE = re.compile(
+    r"python|程式|練習題|題目|作業|隨堂考|小考|提交|runtime|time ?limit|超時|accepted|通過率|PY-[A-Z0-9]|intention|codinghelp"
+    r"|迴圈|while|for 迴圈|函式|function|字典|dict|串列|list|切片|slice",
+    re.I,
+)
 SCORE_RE = re.compile(r"成績|分數|平均|表現|數據|下滑|退步|進步|缺考|關注|建議|改善|(?<!\d)1\d{3}(?!\d)")
 CAUSE_RE = re.compile(r"原因|為什麼|關係|因為|有關|影響")
 
@@ -56,6 +63,8 @@ def classify_rule(message: str) -> str:
         return "unanswerable"
     if CHAT_RE.search(m) and len(m) <= 15:
         return "chitchat"
+    if COURSE_RE.search(m):
+        return "course"
     if SCORE_RE.search(m):
         return "cause" if CAUSE_RE.search(m) else "scores"
     return "docs"
