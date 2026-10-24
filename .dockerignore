@@ -1,0 +1,7 @@
+# 建置映像只需要程式與套件清單；資料以 volume 掛載，其餘（文件、測試、.git）都不送進 build context
+*
+!api/requirements.txt
+!api/app
+!ui/requirements.txt
+!ui/app.py
+**/__pycache__
