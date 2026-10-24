@@ -3,6 +3,7 @@
 # 用法（在 repo 根目錄的 PowerShell 執行）：
 #   .\demo.ps1               # 版本 A（預設）
 #   .\demo.ps1 -Version B    # 版本 B（向量＋BM25）
+#   .\demo.ps1 -Course       # 一併開啟 Python 課程資料（預設關閉，不是助教提供的資料）
 #   .\demo.ps1 -Stop         # 關閉
 # 若出現「已停用指令碼執行」：powershell -ExecutionPolicy Bypass -File .\demo.ps1
 #
@@ -11,6 +12,7 @@
 
 param(
     [ValidateSet("A", "B")] [string]$Version = "A",
+    [switch]$Course,
     [switch]$Stop
 )
 # 不用 Stop：Windows PowerShell 5.1 會把原生指令（docker、ollama）寫到 stderr 的進度訊息當成錯誤
@@ -63,8 +65,9 @@ foreach ($m in $Models) {
     else { Write-Host "    下載 $m（只有第一次需要）"; & $ollama pull $m; if ($LASTEXITCODE -ne 0) { Fail "下載 $m 失敗" } }
 }
 
-Step "建置並啟動容器（檢索版本 $Version）"
+Step "建置並啟動容器（檢索版本 $Version；Python 課程資料：$(if ($Course) { '開啟' } else { '關閉' })）"
 $env:RETRIEVER_VERSION = $Version
+$env:ENABLE_COURSE = $(if ($Course) { "1" } else { "0" })
 $t0 = Get-Date
 docker compose up -d --build --force-recreate
 if ($LASTEXITCODE -ne 0) { Fail "docker compose 失敗，請看上方訊息。" }

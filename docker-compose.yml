@@ -22,6 +22,8 @@ services:
       CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:0.5b}
       # 誠實回答：與校務文件的最高相似度低於此值、且沒有查到成績時，直接回答不知道
       NO_ANSWER_SIM: ${NO_ANSWER_SIM:-0.40}
+      # Python 課程彙總資料（data/course/python/）不是助教提供的資料，預設關閉；設 1 開啟
+      ENABLE_COURSE: ${ENABLE_COURSE:-0}
       # 啟動時若 Ollama 缺模型就自動下載；設 0 可關閉
       OLLAMA_AUTO_PULL: ${OLLAMA_AUTO_PULL:-1}
     extra_hosts:
