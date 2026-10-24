@@ -44,7 +44,9 @@ python scripts/check_system.py
 
 腳本會依序：檢查 Docker 與 Ollama → 讓 Ollama 接受容器連線（Windows 自動設定 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama）→ 下載缺少的模型（`qwen2.5:3b`、`qwen2.5:0.5b`、`bge-m3`）→ `docker compose up -d --build` → 等待就緒 → 開啟 http://localhost:8501 。
 
-實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：從 GitHub 重新 clone、刪除所有本機映像後第一次執行（含建置映像）63 秒完成，之後重跑約 15 秒；`check_system.py` 11/11、公開題 12/12。
+實測（Windows 11、Docker Desktop 29.9.2、Ollama 0.40.7，模型已下載）：連 Python 基底映像與所有快取都清除後，純建置約 54 秒，從執行 `demo.ps1` 到可用 2～3 分鐘（主要是下載約 200 MB 的套件，視網路而定）；之後重跑約 15 秒。
+
+api 與 ui 共用根目錄 `Dockerfile` 建出的同一個映像（`headmaster-ai`），套件用 `uv` 平行下載、只安裝一次，映像總大小 762 MB（原本兩個映像共 1,266 MB），同樣條件下建置時間 72 秒 → 54 秒。
 
 - 切換到版本 B：`.\demo.ps1 -Version B`（macOS／Linux：`./demo.sh B`），介面「Agent 思考步驟」中的 retrieve 會顯示「版本B」
 - 關閉：`.\demo.ps1 -Stop`（`./demo.sh stop`）

@@ -8,7 +8,10 @@ name: headmaster-ai
 
 services:
   api:
-    build: ./api
+    # api 與 ui 共用根目錄 Dockerfile 建出的同一個映像（套件只裝一次）
+    build: .
+    image: headmaster-ai:latest
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       LOCAL_MODEL: ${LOCAL_MODEL:-qwen2.5:3b}
@@ -43,7 +46,9 @@ services:
     restart: unless-stopped
 
   ui:
-    build: ./ui
+    image: headmaster-ai:latest
+    pull_policy: never  # 映像由 api 建置，不要去 registry 拉
+    command: ["streamlit", "run", "ui_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     environment:
       API_URL: http://api:8000
     ports:
