@@ -196,4 +196,4 @@ PASS  principal-012
 | Python 課程資料集（`scripts/build_course_dataset.py`、`data/course/python/`） | Claude Code | 從課程平台資料庫備份產生彙總資料集並去識別化 | 由平台管理者授權；只讀資料表結構與筆數決定做法，不讀個人資料；產生後逐行讀完三個輸出檔，確認沒有姓名、學號、email、網址；發現「用總數相減可反推被抑制的格子」與「0／100 計分時平均會透露人數」後，改為人數四捨五入到 5、平均取整數並重新檢查；以 `git check-ignore` 與 commit 內容確認資料庫備份沒有被 commit |
 | 課程資料接入（`api/app/course.py`、分流 `course` 類） | Claude Code | 課程統計查詢、課程題目檢索、課程專用 prompt、回答數字查核 | 實際送 6 題課程問題並逐句閱讀回答，找出 8 個問題（含模型編造隨堂考分數）並逐一修正，見 `docs/course-data.md`；每題 evidence 以 pandas 獨立重跑一致；確認 78 題分流評測集沒有被誤分到 `course`；公開題仍 12/12 |
 | 整套系統檢查（`scripts/check_system.py`）、引用查核 | Claude Code | 撰寫 11 類情境檢查；新增引用查核與追問格式修正 | 從 GitHub 重新 clone 到乾淨資料夾、刪除本機映像後執行 `demo.ps1`，`check_system.py` 11/11、公開題 12/12、evidence 20/20；另在瀏覽器逐一展開 Sources、護欄判定、Agent 思考步驟、路由、建議與統計依據五個欄位確認內容；讀完每則回答，發現模型引用了沒有檢索到的段落與重複格式後才加入修正 |
-
+| 誠實回答「不知道」（`api/app/honesty.py`、`scripts/eval_honesty.py`、`docs/honesty-experiments.md`）與介面開場介紹、思考中提示 | Claude Code | 設計並評估相似度門檻與可回答性檢查；介面自我介紹與範例按鈕 | 另寫 17 題「資料沒有答案」的題目（其中 1 題經查原文其實有答案，已移除並註明）；量測 28 題有答案題目的相似度分布決定門檻，確認 0 題誤擋；可回答性檢查實測誤擋 8～13 題後決定不採用；把沒有答案的題目送進完整系統逐題讀回答；瀏覽器實際點範例按鈕、確認思考中提示與不知道的回答；`check_system.py` 13/13 |

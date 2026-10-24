@@ -30,7 +30,7 @@ from collections import defaultdict
 
 import httpx
 
-from . import analytics, course, retrieval, router
+from . import analytics, course, honesty, retrieval, router
 from .schemas import ChatResponse, Guardrail, Source, TraceStep
 
 
@@ -55,7 +55,9 @@ SYSTEM_PROMPT = """你是國中校長的 AI 決策助手，請用繁體中文回
 2. 引用校務文件時，在句尾用 [段落id] 標註，例如 [S1-2-1]；只引用和問題有關的段落，無關的不要提。
 3. 成績資料只有學期、年級、班級、學號、科目、分數，沒有教師、出缺席、家庭背景等資訊。
 4. 說明原因時一律寫成「可能」「推測」，因為文件提到某件事，不代表成績一定受它影響。
-5. 資料與文件都沒有的事，直接說不知道。"""
+5. 資料與文件都沒有的事，直接說「資料中沒有提到，我不知道」，不要猜測，也不要給一般性的常識答案。
+6. 問題問的是特定的人名、數字、日期或結果，而資料沒有寫出來時，就說沒有；不要用相近的資訊代替
+   （例如問「誰是負責人」，資料只寫了「某某代表出席」，不能說那位代表就是負責人）。"""
 
 
 # ---------------------------------------------------------------- 護欄（T16）
@@ -260,6 +262,20 @@ def handle(session_id: str, message: str) -> ChatResponse:
 
     analysis = analyze_scores(session_id, message, trace)
     sources = retrieve(message, trace)
+
+    # 誠實回答：沒有查到成績、問題又和所有校務文件都不像時，直接說不知道，不交給模型發揮
+    if not analysis.used:
+        try:
+            sim = honesty.top_similarity(message)
+        except retrieval.EmbedError:
+            sim = None
+        if sim is not None and sim < honesty.SIM_THRESHOLD:
+            trace.append(TraceStep(step="honesty", detail=f"與校務文件的最高相似度 {sim:.2f} < {honesty.SIM_THRESHOLD}，資料中沒有相關內容，不生成"))
+            history += [{"role": "user", "content": message}, {"role": "assistant", "content": honesty.UNKNOWN}]
+            return ChatResponse(answer=honesty.UNKNOWN, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
+        if sim is not None:
+            trace.append(TraceStep(step="honesty", detail=f"與校務文件的最高相似度 {sim:.2f}，交給模型回答（沒有答案時應回答不知道）"))
+
     messages = build_messages(message, history, analysis, sources)
 
     try:
