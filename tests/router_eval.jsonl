@@ -59,3 +59,6 @@
 {"id": "router-19", "question": "九年級英文成績有變化嗎？跟補充教材有沒有關係？", "label": "cause", "src": "自訂"}
 {"id": "router-20", "question": "七年級自然成績變好是因為新實驗室嗎？", "label": "cause", "src": "自訂"}
 {"id": "router-21", "question": "903 班的英文成績和全英語授課有沒有關係？", "label": "cause", "src": "自訂"}
+{"id": "review-01", "question": "段考題目是不是太難，造成成績下滑？", "label": "cause", "src": "組員檢查回報"}
+{"id": "review-02", "question": "八年級數學的作業量是不是太多？", "label": "docs", "src": "組員檢查回報"}
+{"id": "review-03", "question": "段考的通過率如何？", "label": "scores", "src": "組員檢查回報"}

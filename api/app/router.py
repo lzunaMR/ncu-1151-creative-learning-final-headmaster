@@ -35,38 +35,59 @@ ROUTER_MODE = os.environ.get("ROUTER_MODE", "rule").strip()
 # 只有 ROUTER_MODE=llm／fields 才用到；實驗中 3B 最好（docs/router-experiments.md）
 ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "qwen2.5:3b").strip()
 CHAT_MODEL = os.environ.get("CHAT_MODEL", "qwen2.5:0.5b").strip()
+# Python 課程資料不是助教提供的資料，預設關閉；ENABLE_COURSE=1 才會分出 course 類
+COURSE_ENABLED = os.environ.get("ENABLE_COURSE", "0").strip() == "1"
 
 # ---------------------------------------------------------------- 規則
 
-# 資料裡沒有的欄位：教師評價、出缺席、家庭背景、性別、課外行為
+# 資料裡沒有的欄位：教師評價、出缺席、家庭背景與族群、性別、課外行為
+# （第二版：依保留集 holdout 與組員檢查補上「導師」「出勤」「族群」「年資」「上課態度」等說法；
+#   評估改用修改前就寫好的第二份保留集 tests/router_eval_holdout2.jsonl）
 NO_FIELD_RE = re.compile(
-    r"(哪位|哪個|哪些)(老師|教師)|(老師|教師).{0,6}(教得|教學能力|能力|評價|好不好|最差|最好)"
-    r"|缺席|出缺席|出席率|遲到|曠課|請假(最多|次數|天數)"
-    r"|家庭|單親|低收|收入|社經|父母|家長.{0,4}(職業|學歷)"
+    r"(哪位|哪個|哪些)(老師|教師|導師)|(老師|教師|導師).{0,8}(教得|教學能力|能力|評價|好不好|最差|最好|受歡迎|歡迎|年資|資歷)"
+    r"|缺席|出缺席|出席率|出勤|到校|遲到|曠課|請假(最多|次數|天數|紀錄)"
+    r"|家庭|單親|低收|收入|社經|父母|家長.{0,4}(職業|學歷|教育程度)|教育程度|原住民|族群"
     r"|性別|男生|女生|男女"
-    r"|補習|讀書.{0,4}(小時|時間)|睡眠|手機"
+    r"|補習|讀書.{0,4}(小時|時間)|睡眠|手機|上課.{0,4}(專心|態度|秩序)"
 )
-CHAT_RE = re.compile(r"^(你好|您好|哈囉|嗨|hi|hello|早安|午安|晚安|謝謝|感謝|辛苦了)|你是誰|你(可以|能)(幫我)?做什麼|^我(叫|是)|我剛剛說", re.I)
+GREETING_RE = re.compile(r"^((你好|您好|哈囉|嗨|hi|hello|早安|午安|晚安|謝謝|感謝|辛苦了|好的|了解|收到|ok)[!！~～,，、。.\s]*)+", re.I)
+QUESTION_RE = re.compile(r"什麼|哪|多少|幾|如何|怎麼|嗎|\?|？")
+CHAT_RE = re.compile(r"你是誰|你是什麼|你(可以|能)(幫我)?做什麼|^我(叫|是)|我剛剛說", re.I)
+
 # Python 課程資料（data/course/python/）。只有規則會分出這一類；llm／fields 的 prompt 沒有這一類
-COURSE_RE = re.compile(
-    r"python|程式|練習題|題目|作業|隨堂考|小考|提交|runtime|time ?limit|超時|accepted|通過率|PY-[A-Z0-9]|intention|codinghelp"
+# 「強」詞只會出現在課程問題；「弱」詞（題目、作業、通過率…）校務問題也會用，
+# 只有在問題完全沒有校務線索（年級、班級、段考、學期、科目…）時才算課程問題。
+COURSE_STRONG_RE = re.compile(
+    r"python|程式|練習題|隨堂考|runtime|time ?limit|accepted|PY-[A-Z0-9]|intention|codinghelp"
     r"|迴圈|while|for 迴圈|函式|function|字典|dict|串列|list|切片|slice",
     re.I,
 )
-SCORE_RE = re.compile(r"成績|分數|平均|表現|數據|下滑|退步|進步|缺考|關注|建議|改善|(?<!\d)1\d{3}(?!\d)")
-CAUSE_RE = re.compile(r"原因|為什麼|關係|因為|有關|影響")
+COURSE_WEAK_RE = re.compile(r"題目|作業|提交|通過率|小考|超時")
+SCHOOL_RE = re.compile(
+    r"[七八九789]\s*年級|國[一二三]|(?<!\d)[789]\d{2}\s*班|班級|各班|段考|會考|學期|(?<!\d)1\d{3}(?!\d)"
+    r"|國文|英文|英語|數學|自然|社會|學習扶助|補救|全校|校務|校長|導師|任課"
+)
+SCORE_RE = re.compile(r"成績|分數|平均|表現|數據|下滑|下降|退步|進步|缺考|及格|關注|建議|改善|(?<!\d)1\d{3}(?!\d)")
+CAUSE_RE = re.compile(r"原因|為什麼|關係|因為|有關|影響|所以")
 
 
 def classify_rule(message: str) -> str:
     m = message.strip()
     if NO_FIELD_RE.search(m):
         return "unanswerable"
+    # 開頭的問候語先拿掉；拿掉後還有實質內容（例如「你好，請問八年級數學平均多少？」）就照內容分類
     if CHAT_RE.search(m) and len(m) <= 15:
         return "chitchat"
-    if COURSE_RE.search(m):
+    rest = GREETING_RE.sub("", m)
+    if GREETING_RE.match(m) and not (
+        SCHOOL_RE.search(rest) or SCORE_RE.search(rest) or COURSE_STRONG_RE.search(rest) or COURSE_WEAK_RE.search(rest)
+        or QUESTION_RE.search(rest)
+    ):
+        return "chitchat"
+    if COURSE_ENABLED and (COURSE_STRONG_RE.search(rest) or (COURSE_WEAK_RE.search(rest) and not SCHOOL_RE.search(rest))):
         return "course"
-    if SCORE_RE.search(m):
-        return "cause" if CAUSE_RE.search(m) else "scores"
+    if SCORE_RE.search(rest):
+        return "cause" if CAUSE_RE.search(rest) else "scores"
     return "docs"
 
 
