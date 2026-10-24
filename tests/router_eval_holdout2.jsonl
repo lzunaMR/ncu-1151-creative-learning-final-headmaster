@@ -1,0 +1,21 @@
+{"id": "holdout2-01", "question": "班導師對學生好不好？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-02", "question": "學生的請假紀錄多不多？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-03", "question": "新住民子女的數學成績怎麼樣？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-04", "question": "哪個老師最常被家長抱怨？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-05", "question": "學生每天滑手機多久？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-06", "question": "有特殊需求的學生成績如何？", "label": "unanswerable", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-07", "question": "嗨，你好", "label": "chitchat", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-08", "question": "謝謝你，辛苦了", "label": "chitchat", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-09", "question": "早安！", "label": "chitchat", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-10", "question": "你好，想問 1142 學期九年級英文平均幾分？", "label": "scores", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-11", "question": "哈囉，805 班這學期國文表現如何？", "label": "scores", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-12", "question": "這學期段考的題目會不會太難，所以八年級數學平均下降？", "label": "cause", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-13", "question": "七年級數學的及格率有多少？", "label": "scores", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-14", "question": "段考的題目由誰負責出？", "label": "docs", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-15", "question": "學習扶助的作業要怎麼繳交？", "label": "docs", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-16", "question": "Python 課最難的練習題是哪一題？", "label": "course", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-17", "question": "程式課的學生最常犯什麼錯？", "label": "course", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-18", "question": "哪些題目有用到 for 迴圈？", "label": "course", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-19", "question": "PY-C3-A1 在考什麼？", "label": "course", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-20", "question": "隨堂考平均最低是哪一次？", "label": "course", "src": "第二份保留集（修改規則前寫好）"}
+{"id": "holdout2-21", "question": "九年級英文下滑，是不是跟補充教材太難有關？", "label": "cause", "src": "第二份保留集（修改規則前寫好）"}

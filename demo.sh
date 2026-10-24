@@ -4,6 +4,7 @@
 # 用法（在 repo 根目錄執行）：
 #   ./demo.sh          # 版本 A（預設）
 #   ./demo.sh B        # 版本 B（向量＋BM25）
+#   ./demo.sh A course # 一併開啟 Python 課程資料（預設關閉，不是助教提供的資料）
 #   ./demo.sh stop     # 關閉
 #
 # 會做的事：檢查 Docker 與 Ollama → 下載缺少的模型 → docker compose up --build → 等待就緒 → 開啟瀏覽器
@@ -42,7 +43,8 @@ done
 
 step "建置並啟動容器（檢索版本 $VERSION）"
 t0=$(date +%s)
-RETRIEVER_VERSION="$VERSION" docker compose up -d --build --force-recreate
+COURSE=0; [ "${2:-}" = "course" ] && COURSE=1
+RETRIEVER_VERSION="$VERSION" ENABLE_COURSE="$COURSE" docker compose up -d --build --force-recreate
 
 step "等待服務就緒"
 for _ in $(seq 1 200); do

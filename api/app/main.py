@@ -23,7 +23,7 @@ def startup():
 @app.get("/health")
 def health():
     # 規格只要求 200；另外附上 Ollama 狀態，方便 demo 時排查
-    return {"status": "ok", "ollama": ollama_check.STATUS}
+    return {"status": "ok", "ollama": ollama_check.STATUS, "features": {"course": router.COURSE_ENABLED}}
 
 
 @app.post("/chat", response_model=ChatResponse)

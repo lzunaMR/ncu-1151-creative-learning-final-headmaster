@@ -22,8 +22,7 @@ INTRO = """你好，我是**校長 AI 決策助手**，可以協助你：
 - **分析全校成績**：比較 1132、1141、1142 三個學期各年級、班級、科目的平均，找出下滑或進步最多的地方，每項結論都附上可以重跑的查詢（evidence）。
 - **查詢校務文件**：本學期的校務會議、數學與英語教學研究會、學習扶助計畫，回答時標註引用的段落。
 - **推測可能原因**：把成績變化和文件記錄的事件對照，並清楚分開「資料顯示的事實」與「推測」。
-- **Python 課程資料**：一門 Python 程式設計課的練習題與彙總統計。
-
+{course_line}
 資料裡沒有的事（例如評價老師、出缺席、家庭背景），或找不到相關內容時，我會直接說**不知道**，不會用猜的。
 
 可以點下面的範例開始，或在最下方輸入問題："""
@@ -33,9 +32,25 @@ EXAMPLES = [
     "805 班的數學成績變化，跟本學期的人事異動有沒有關係？",
     "學習扶助開辦哪些科目？",
     "給我三個校務改善建議，要附上數據",
-    "Python 課哪一題最多人卡關？",
     "哪位老師教得最差？",
 ]
+
+
+@st.cache_data(ttl=60)
+def features() -> dict:
+    try:
+        return httpx.get(f"{API_URL}/health", timeout=5).json().get("features", {})
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+COURSE_ON = bool(features().get("course"))
+if COURSE_ON:
+    EXAMPLES = EXAMPLES[:4] + ["Python 課哪一題最多人卡關？"] + EXAMPLES[4:]
+INTRO = INTRO.replace(
+    "{course_line}",
+    "- **Python 課程資料**：一門 Python 程式設計課的練習題與彙總統計（額外資料，預設關閉）。\n" if COURSE_ON else "",
+)
 
 
 def render_backend(resp: dict) -> None:

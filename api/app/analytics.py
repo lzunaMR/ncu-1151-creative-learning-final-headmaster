@@ -420,11 +420,52 @@ def _best_finding(ctx: Ctx) -> Finding | None:
 # ---------------------------------------------------------------- 分析流程
 
 
+def _cohort_class_finding(ctx: Ctx, grade: Any, subject: Any) -> Finding | None:
+    """跨學年的班級比較：升年級不重新編班（703 → 803 是同一班學生），
+    所以用學號鎖定「cur 學期的這個年級」那批學生，比較他們自己在兩個學期的成績，依班序（班級代號末兩碼）分組。"""
+    if grade is None or _py(grade) - 1 < 7:
+        return None  # 七年級的上一學年還在國小，資料裡沒有
+    g = _py(grade)
+    ids = f"df[(df.semester=={ctx.cur!r})&(df.grade=={g!r})].student_id"
+    subj = f"&(df.subject=={_py(subject)!r})" if subject else ""
+    q = (
+        f"df[(df.semester.isin([{ctx.prev!r}, {ctx.cur!r}])){subj}&(df.student_id.isin({ids}))]"
+        f".assign(cohort=lambda t: t['class'] % 100)"
+        f".pivot_table(index='cohort', columns='semester', values='score', aggfunc='mean').round(2)"
+        f".assign(change=lambda t: (t[{ctx.cur!r}] - t[{ctx.prev!r}]).round(2))"
+    )
+    raw, ev = _query(q, ctx.trace)
+    table = raw.dropna(subset=["change"])
+    if table.empty:
+        return None
+    label = lambda k: f"{(g - 1) * 100 + int(k)}→{g * 100 + int(k)} 班"  # noqa: E731
+    k = table["change"].idxmin()
+    w = table.loc[k]
+    a, b, c = w[ctx.prev], w[ctx.cur], w["change"]
+    listing = "、".join(f"{label(i)} {r['change']:+.2f}" for i, r in table.iterrows())
+    what = f"{GRADE_CN.get(g, f'{g} 年級')}{_py(subject) or ''}"
+    move = "下滑" if c < 0 else "上升"
+    fact = (
+        f"{what}（同一批學生跨學年追蹤）：{ctx.prev} → {ctx.cur}，各班變化：{listing}。"
+        f"變化最不利的是 {label(k)}：{_fmt(a)} → {_fmt(b)}（{c:+.2f} 分）。"
+    )
+    claim = (
+        f"{label(k)}的同一批學生，{what}平均從 {ctx.prev} 學期的 {_fmt(a)} {move}到 {ctx.cur} 學期的 {_fmt(b)}"
+        f"（{c:+.2f} 分），是該年級各班中{'下滑最多' if c < 0 else '進步最少'}的"
+    )
+    ctx.notes.append(f"{ctx.prev} 與 {ctx.cur} 跨學年：班級比較以學號追蹤同一批學生（升年級不重新編班，例如 {label(k)}）。")
+    return Finding(fact, claim, [ev])
+
+
 def _drill_class(ctx: Ctx, grade: Any, subject: Any) -> list[Finding]:
-    """在某年級某科內比較各班。跨學年時班級代號會改變（703 → 803），不做班級比較。"""
+    """在某年級某科內比較各班。跨學年時改為追蹤同一批學生（703 → 803 是同一班）。"""
     if not _same_school_year(ctx.prev, ctx.cur):
-        ctx.notes.append(f"{ctx.prev} 與 {ctx.cur} 跨學年，班級代號會隨升年級改變，未做班級比較。")
-        return []
+        f = _cohort_class_finding(ctx, grade, subject)
+        if f is None:
+            why = "七年級的上一學年還在國小，資料中沒有這批學生的成績" if grade is not None and _py(grade) == 7 else "找不到可追蹤的同一批學生"
+            ctx.notes.append(f"{ctx.prev} 與 {ctx.cur} 跨學年，{why}，未做班級比較。")
+            return []
+        return [f]
     r = _trend_finding(ctx, ["class"], {"grade": grade, "subject": subject})
     return [r[0]] if r else []
 
