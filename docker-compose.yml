@@ -20,6 +20,8 @@ services:
       ROUTER_MODE: ${ROUTER_MODE:-rule}
       ROUTER_MODEL: ${ROUTER_MODEL:-qwen2.5:3b}
       CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:0.5b}
+      # 誠實回答：與校務文件的最高相似度低於此值、且沒有查到成績時，直接回答不知道
+      NO_ANSWER_SIM: ${NO_ANSWER_SIM:-0.40}
       # 啟動時若 Ollama 缺模型就自動下載；設 0 可關閉
       OLLAMA_AUTO_PULL: ${OLLAMA_AUTO_PULL:-1}
     extra_hosts:

@@ -375,9 +375,23 @@ class EmbedError(RuntimeError):
 _st_models: dict[str, object] = {}
 
 
+_query_cache: dict[tuple, list[float]] = {}
+
+
 def embed(texts: list[str], model: str, backend: str | None = None) -> list[list[float]]:
-    """回傳 L2 正規化後的向量，內積即餘弦相似度。"""
+    """回傳 L2 正規化後的向量，內積即餘弦相似度。單一句子（問句）會快取，避免同一題重算。"""
     backend = backend or EMBED_BACKEND
+    if len(texts) == 1:
+        key = (model, backend, texts[0])
+        if key not in _query_cache:
+            if len(_query_cache) > 512:
+                _query_cache.clear()
+            _query_cache[key] = _embed(texts, model, backend)[0]
+        return [_query_cache[key]]
+    return _embed(texts, model, backend)
+
+
+def _embed(texts: list[str], model: str, backend: str) -> list[list[float]]:
     ollama_name, hf_name = EMBED_MODELS[model]
     if backend == "st":
         if hf_name not in _st_models:
