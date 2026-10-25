@@ -23,11 +23,15 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").strip().rstr
 SIM_THRESHOLD = float(os.environ.get("NO_ANSWER_SIM", "0.40"))
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "qwen2.5:3b").strip()
 
-UNKNOWN = (
-    "我在校務文件與成績資料中找不到可以回答這個問題的內容，所以**我不知道**，也不會用猜的回答。\n\n"
-    "系統目前有的資料：全校三個學期的各科成績，以及本學期的校務會議、數學與英語教學研究會、學習扶助計畫等文件；"
-    "另有一門 Python 課程的彙總資料。可以換個說法，或改問這些範圍內的問題。"
-)
+def unknown_reply() -> str:
+    from .router import COURSE_ENABLED  # 課程資料關閉時，不要提到它
+
+    extra = "；另有一門 Python 課程的彙總資料" if COURSE_ENABLED else ""
+    return (
+        "我在校務文件與成績資料中找不到可以回答這個問題的內容，所以**我不知道**，也不會用猜的回答。\n\n"
+        "系統目前有的資料：全校三個學期的各科成績，以及本學期的校務會議、數學與英語教學研究會、學習扶助計畫等文件"
+        f"{extra}。可以換個說法，或改問這些範圍內的問題。"
+    )
 
 JUDGE_PROMPT = """你是查核員。下面是系統找到的資料，請判斷：只根據這些資料，能不能回答使用者的問題？
 資料沒有寫到的事，即使你知道答案，也算「不能」。
