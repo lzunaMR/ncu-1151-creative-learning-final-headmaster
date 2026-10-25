@@ -30,7 +30,7 @@ from collections import defaultdict
 
 import httpx
 
-from . import analytics, course, honesty, retrieval, router
+from . import analytics, course, honesty, knowledge, retrieval, router
 from .schemas import ChatResponse, Guardrail, Source, TraceStep
 
 
@@ -138,7 +138,7 @@ CHAT_PROMPT = "你是國中校長的 AI 決策助手，請用繁體中文簡短�
 
 
 def build_messages(message: str, history: list[dict], analysis: analytics.Analysis, sources: list[Source]) -> list[dict]:
-    parts = [SYSTEM_PROMPT]
+    parts = [SYSTEM_PROMPT + ("\n" + knowledge.PROMPT_RULE if knowledge.enabled("prompt") else "")]
     if analysis.used:
         facts = "\n".join(f"- {f}" for f in analysis.facts + analysis.notes) or "- （查無資料）"
         parts.append(f"資料事實（程式用 pandas 從成績資料算出，已另外列給使用者看）：\n{facts}")
@@ -210,6 +210,22 @@ def check_citations(model_text: str, sources: list[Source], trace: list[TraceSte
     return model_text
 
 
+def check_numbers(model_text: str, analysis: analytics.Analysis, sources: list[Source], message: str,
+                  trace: list[TraceStep]) -> str:
+    """數字查核：模型寫的數字必須出現在資料事實、檢索到的文件或問題中；班級的數字不可以說成別的對象的。"""
+    facts = analysis.facts + analysis.notes if analysis.used else []
+    bad = honesty.unsupported_numbers(model_text, facts + [s.text for s in sources] + [message])
+    wrong = honesty.misattributed_numbers(model_text, facts)
+    trace.append(TraceStep(step="number_check", detail=(
+        f"不在資料中的數字：{', '.join(bad) or '無'}；"
+        f"對象可能不符：{', '.join(f'{n}（資料中是 {c} 班的值）' for n, c in wrong) or '無'}")))
+    if bad:
+        model_text += f"\n\n⚠ 以上說明中的數字 {', '.join(bad)} 不在資料中，可能是模型自行產生或自行計算的，請以「資料顯示的事實」為準。"
+    if wrong:
+        model_text += "\n\n⚠ " + "；".join(f"{n} 在資料中是 {c} 班的值，但這句話沒有提到 {c} 班" for n, c in wrong) + "，可能把數字說成了別的對象，請以「資料顯示的事實」為準。"
+    return model_text
+
+
 def compose_answer(analysis: analytics.Analysis, model_text: str) -> str:
     if not analysis.used:
         return model_text
@@ -225,6 +241,8 @@ def handle(session_id: str, message: str) -> ChatResponse:
     history = _history[session_id]
 
     route = None if router.ROUTER_MODE == "off" else router.route(message, trace)
+    if route is not None and route.label in ("scores", "docs", "cause") and knowledge.is_knowledge(message, trace):
+        route = router.Route("out_of_scope", f"knowledge（{route.label}→out_of_scope）", route.ms)
     guardrail = check_guardrail(route, trace)
 
     if guardrail.action == "refuse":
@@ -288,7 +306,10 @@ def handle(session_id: str, message: str) -> ChatResponse:
         model_text = generate(messages, trace)
     except GenerationError as e:
         model_text = f"（地端模型目前無法連線，未產生文字說明：{e}）"
+    if knowledge.enabled("prompt"):
+        model_text = knowledge.cut_after_refusal(model_text)
     model_text = check_citations(tidy(model_text), sources, trace)
+    model_text = check_numbers(model_text, analysis, sources, message, trace)
 
     answer = compose_answer(analysis, model_text)
     history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]

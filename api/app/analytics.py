@@ -31,6 +31,7 @@ from typing import Any
 
 import pandas as pd
 
+from . import knowledge
 from .schemas import Evidence, Recommendation, TraceStep
 
 SCORES_CSV = Path(os.environ.get("PRINCIPAL_SCORES_CSV", "/data/principal/scores.csv").strip())
@@ -185,10 +186,16 @@ class Intent:
     n_wanted: int = 1
 
 
-def _find_subject(message: str, subjects: list[str]) -> str | None:
+def _find_subjects(message: str, subjects: list[str]) -> list[str]:
+    """問題提到的科目，依出現順序（別名換成正式名稱）。"""
     hits = [(message.find(s), s) for s in subjects if s in message]
     hits += [(message.find(a), t) for a, t in SUBJECT_ALIASES.items() if a in message and t in subjects]
-    return min(hits)[1] if hits else None
+    return list(dict.fromkeys(t for _, t in sorted(hits)))
+
+
+def _find_subject(message: str, subjects: list[str]) -> str | None:
+    found = _find_subjects(message, subjects)
+    return found[0] if found else None
 
 
 def parse(message: str, df: pd.DataFrame, memory: dict | None = None) -> Intent | None:
@@ -208,9 +215,16 @@ def parse(message: str, df: pd.DataFrame, memory: dict | None = None) -> Intent 
             break
     klass = next((classes[c] for c in CLASS_RE.findall(message) if c in classes), None)
     subject = _find_subject(message, subjects)
+    # 問題比較兩科以上（「英文和數學哪一科退步比較多？」）時不限定科目，改成各科一起比，
+    # 否則只會算第一科，另一科的數字變成模型自己編（實際發生過）
+    multi_subject = len(_find_subjects(message, subjects)) >= 2
 
     has_entity = bool(sem_hits or grade or klass is not None or subject)
     needs = has_entity or bool(DATA_RE.search(message))
+    if knowledge.enabled("intent") and subject and not (sem_hits or grade or klass is not None):
+        # 只有科目名稱（「英文的現在完成式怎麼用？」）不代表在問成績，還要有成績相關的詞
+        needs = bool(DATA_RE.search(message) or TREND_RE.search(message) or LIST_RE.search(message)
+                     or OVERVIEW_RE.search(message) or SUBJECT_ASK_RE.search(message))
     if not needs and memory and FOLLOWUP_RE.search(message):
         needs = True  # 追問，例如「那哪一班最嚴重？」
     if not needs:
@@ -240,7 +254,7 @@ def parse(message: str, df: pd.DataFrame, memory: dict | None = None) -> Intent 
         semesters=sem_hits,
         grade=grade,
         klass=klass,
-        subject=subject,
+        subject=None if multi_subject else subject,
         want_class=bool(CLASS_ASK_RE.search(message)),
         trend=bool(TREND_RE.search(message)),
         listing=bool(LIST_RE.search(message)),
@@ -374,10 +388,18 @@ def _means_finding(ctx: Ctx, filters: dict[str, Any], by: list[str]) -> Finding 
         text = "、".join(f"{_label(by[0], k)} {_fmt(v)}" for k, v in raw.items())
     fact = f"{ctx.cur} 學期{scope}各{'×'.join(DIM_NAME[d] for d in by)}平均分數：{text}。"
     claim = f"{ctx.cur} 學期{scope}各{'×'.join(DIM_NAME[d] for d in by)}平均分數（缺考不計入）：{text}"
+    evs = [ev]
     if not isinstance(raw, pd.DataFrame) and len(raw) > 1:
         lo = raw.idxmin()
         fact = fact[:-1] + f"；最低為{_label(by[0], lo)}（{_fmt(raw[lo])}）。"
-    return Finding(fact, claim, [ev])
+    if by == ["class"] and filters.get("grade") is not None and filters.get("subject") is not None:
+        # 各班平均之外，另外算整個年級的平均（全體學生平均，不是各班平均的平均），模型才不會自己算
+        total, ev2 = _query(f"{base}.score.mean().round(2)", ctx.trace)
+        if total == total:  # 不是 NaN
+            fact = fact[:-1] + f"；{scope}整體平均 {_fmt(total)}。"
+            claim += f"；整體平均 {_fmt(total)}"
+            evs.append(ev2)
+    return Finding(fact, claim, evs)
 
 
 def _missing_finding(ctx: Ctx) -> Finding | None:

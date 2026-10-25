@@ -44,6 +44,63 @@ JUDGE_PROMPT = """你是查核員。下面是系統找到的資料，請判斷�
 判斷："""
 
 
+# ---------------------------------------------------------------- 數字查核（校務流程）
+# 「解讀與建議」是模型寫的，數字必須來自程式算出的資料事實、檢索到的文件或使用者的問題（prompt 規則 1）。
+# 兩種錯誤都看過：①編出資料沒有的數字（八年級數學平均說成 59.92，資料是 59.58）；
+# ②數字在資料裡，但說成別的對象的（903 班的 74.12 說成九年級的平均）。
+
+NUM_RE = re.compile(r"(?<![A-Za-z0-9.])\d+(?:\.\d+)?")
+ID_RE = re.compile(r"\[?(?:S\d+-\d+-\d+|PY-[A-Z0-9-]+)\]?")
+# 資料事實中「某班的值」：801 班 -4.44／805 班：64.64 → 52.24／705→805 班 -1.72
+CLASS_VAL_RE = re.compile(r"(?<!\d)(\d{3}) 班[：:]?\s*([+-]?\d+(?:\.\d+)?)(?:\s*→\s*(\d+(?:\.\d+)?))?")
+SENT_END_RE = re.compile(r"[。！？\n]")
+CLAUSE_RE = re.compile(r"[，。；、！？\n（）()]")
+
+
+def _numbers(text: str) -> list[str]:
+    return NUM_RE.findall(ID_RE.sub(" ", text))
+
+
+def unsupported_numbers(text: str, pool: list[str]) -> list[str]:
+    """模型回答中、但資料事實／文件／問題都沒有出現的數字。用數值比對（12.4 與 12.40 視為相同）；
+    個位整數略過，因為多半是條列序號或「三次段考」這類說法。"""
+    known = {float(n) for t in pool for n in _numbers(t)}
+    bad: list[str] = []
+    for n in _numbers(text):
+        if ("." not in n and len(n) == 1) or float(n) in known or n in bad:
+            continue
+        bad.append(n)
+    return bad
+
+
+def misattributed_numbers(text: str, facts: list[str]) -> list[tuple[str, str]]:
+    """數字在資料事實中只是「某班的值」，但模型那句話（數字前面的部分與數字所在的短句）沒有提到那一班。
+    回傳 (數字, 班級)。只檢查班級：這是實際看過的錯誤型態；年級、科目之間的張冠李戴不在這裡。"""
+    owners: dict[float, set[str]] = {}
+    for f in facts:
+        for m in CLASS_VAL_RE.finditer(f):
+            for v in (m.group(2), m.group(3)):
+                if v:
+                    owners.setdefault(abs(float(v)), set()).add(m.group(1))
+    # 同一個數值也出現在「不是某班的值」的位置（例如年級平均），就不判斷，避免誤報
+    others = {abs(float(n)) for f in facts for n in _numbers(CLASS_VAL_RE.sub(" ", f))}
+    clean = ID_RE.sub(lambda m: " " * len(m.group(0)), text)
+    wrong: list[tuple[str, str]] = []
+    for m in NUM_RE.finditer(clean):
+        v = abs(float(m.group(0)))
+        if v not in owners or v in others or "." not in m.group(0):
+            continue
+        start = max((x.end() for x in SENT_END_RE.finditer(clean, 0, m.start())), default=0)
+        cl_start = max((x.end() for x in CLAUSE_RE.finditer(clean, 0, m.start())), default=0)
+        cl_end = next((x.start() for x in CLAUSE_RE.finditer(clean, m.end())), len(clean))
+        context = clean[start:m.start()] + clean[cl_start:cl_end]
+        if not any(c in context for c in owners[v]):
+            pair = (m.group(0), "、".join(sorted(owners[v])))
+            if pair not in wrong:
+                wrong.append(pair)
+    return wrong
+
+
 def top_similarity(query: str) -> float:
     """問題與所有校務文件段落（版本 A 的段落切塊）的最高餘弦相似度。"""
     idx = retrieval.get_index(retrieval.PRESETS["A"])
