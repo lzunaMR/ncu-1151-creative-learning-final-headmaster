@@ -65,8 +65,14 @@ SYSTEM_PROMPT = """你是國中校長的 AI 決策助手，請用繁體中文回
 
 def check_guardrail(route: router.Route | None, trace: list[TraceStep]) -> Guardrail:
     """依分流結果決定護欄：問到資料沒有的欄位（unanswerable）就拒答。ROUTER_MODE=off 時固定放行。"""
-    if route is not None and route.label == "unanswerable":
-        trace.append(TraceStep(step="guardrail", detail="問題需要資料中沒有的欄位，拒答（refuse）"))
+    reasons = {
+        "unanswerable": "問題需要資料中沒有的欄位",
+        "out_of_scope": "不是校務的問題，不在校長決策助手的範圍",
+        "crisis": "危機訊息（不在本系統範圍），拒答並提供求助專線",
+    }
+    if route is not None and route.label in reasons:
+        # 校長組的護欄類別只有 unanswerable（spec/api-contract.md）；細分的原因寫在 trace
+        trace.append(TraceStep(step="guardrail", detail=f"{reasons[route.label]}，拒答（refuse）"))
         return Guardrail(triggered=True, category="unanswerable", action="refuse")
     trace.append(TraceStep(step="guardrail", detail="放行（pass）"))
     return Guardrail(triggered=False, category=None, action="pass")
@@ -222,7 +228,7 @@ def handle(session_id: str, message: str) -> ChatResponse:
     guardrail = check_guardrail(route, trace)
 
     if guardrail.action == "refuse":
-        answer = router.REFUSAL
+        answer = {"crisis": router.CRISIS_REPLY, "out_of_scope": router.out_of_scope_reply(message)}.get(route.label, router.REFUSAL)
         history += [{"role": "user", "content": message}, {"role": "assistant", "content": answer}]
         return ChatResponse(answer=answer, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
 
@@ -271,8 +277,8 @@ def handle(session_id: str, message: str) -> ChatResponse:
             sim = None
         if sim is not None and sim < honesty.SIM_THRESHOLD:
             trace.append(TraceStep(step="honesty", detail=f"與校務文件的最高相似度 {sim:.2f} < {honesty.SIM_THRESHOLD}，資料中沒有相關內容，不生成"))
-            history += [{"role": "user", "content": message}, {"role": "assistant", "content": honesty.UNKNOWN}]
-            return ChatResponse(answer=honesty.UNKNOWN, route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
+            history += [{"role": "user", "content": message}, {"role": "assistant", "content": honesty.unknown_reply()}]
+            return ChatResponse(answer=honesty.unknown_reply(), route="local", guardrail=guardrail, sources=[], trace=trace, recommendations=[])
         if sim is not None:
             trace.append(TraceStep(step="honesty", detail=f"與校務文件的最高相似度 {sim:.2f}，交給模型回答（沒有答案時應回答不知道）"))
 

@@ -7,6 +7,8 @@
     chitchat      打招呼、道謝、閒聊      → 不查資料，CHAT_MODEL（0.5B）回覆，比較快
     unanswerable  需要資料裡沒有的欄位    → 護欄拒答（refuse），不生成
     course        問 Python 課程資料      → 課程題目檢索＋課程統計（course.py）→ LOCAL_MODEL 生成
+    out_of_scope  不是校務的問題（解題、出題、教材摘要、家長問自己的孩子）→ 拒答並說明本系統的範圍
+    crisis        自傷、霸凌、暴力、性騷擾等危機訊息 → 拒答，但附上求助專線（data/referral.md）
 scores／docs／cause 走同一條路（成績分析會自己判斷要不要查成績），分錯之間不影響結果；
 真正有代價的是錯成 unanswerable（誤拒）與錯成 chitchat（漏查資料）。
 
@@ -29,7 +31,7 @@ import httpx
 
 from .schemas import TraceStep
 
-LABELS = ("scores", "docs", "cause", "chitchat", "unanswerable", "course")
+LABELS = ("scores", "docs", "cause", "chitchat", "unanswerable", "course", "out_of_scope", "crisis")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").strip().rstrip("/")
 ROUTER_MODE = os.environ.get("ROUTER_MODE", "rule").strip()
 # 只有 ROUTER_MODE=llm／fields 才用到；實驗中 3B 最好（docs/router-experiments.md）
@@ -71,8 +73,27 @@ SCORE_RE = re.compile(r"成績|分數|平均|表現|數據|下滑|下降|退步|
 CAUSE_RE = re.compile(r"原因|為什麼|關係|因為|有關|影響|所以")
 
 
+# 危機訊息：安全優先，比其他判斷都早（依家長組公開題的一半寫成，另一半與 tests/scope_holdout.jsonl 用來評估）
+CRISIS_RE = re.compile(
+    r"不想活|想死|去死|死掉|自殺|輕生|自殘|割傷|割腕|活著.{0,2}累"
+    r"|欺負|霸凌|排擠|勒索|嘲笑|被.{0,8}(打|揍)|罵(他|她)"
+    r"|拿刀|威脅|瘀青|家暴|摸(他|她|我)|性騷擾|騷擾|曖昧|網友.{0,6}見面"
+)
+# 不是校務的問題：解方程式、要答案、出題、教材摘要、課程概念、家長問自己的孩子
+OUT_OF_SCOPE_RE = re.compile(
+    r"[xy]\s*[+\-−*/=)]|\d\s*\(?\s*[xy]\b|雞兔"
+    r"|答案是多少|給我答案|直接(告訴|講|給)|只要數字|最後答案|解題過程"
+    r"|出\s*[0-9一二三四五六七八九十兩]+\s*題|出題|幫我出|選擇題"
+    r"|摘要|整理.{0,6}重點|重點整理|給學生複習"
+    r"|^什麼是|是什麼意思|移項|等量公理|去分母|驗算|一元一次|應用問題.{0,4}步驟"
+)
+CHILD_RE = re.compile(r"我(的)?(孩子|小孩|女兒|兒子)|^(孩子|小孩|女兒|兒子|他|她)")
+
+
 def classify_rule(message: str) -> str:
     m = message.strip()
+    if CRISIS_RE.search(m):
+        return "crisis"
     if NO_FIELD_RE.search(m):
         return "unanswerable"
     # 開頭的問候語先拿掉；拿掉後還有實質內容（例如「你好，請問八年級數學平均多少？」）就照內容分類
@@ -84,6 +105,9 @@ def classify_rule(message: str) -> str:
         or QUESTION_RE.search(rest)
     ):
         return "chitchat"
+    # 含校務線索（年級、班級、段考、學期、科目、學習扶助…）的問題一律不當成範圍外，避免誤拒校長題
+    if CHILD_RE.search(rest) or (OUT_OF_SCOPE_RE.search(rest) and not SCHOOL_RE.search(rest)):
+        return "out_of_scope"
     if COURSE_ENABLED and (COURSE_STRONG_RE.search(rest) or (COURSE_WEAK_RE.search(rest) and not SCHOOL_RE.search(rest))):
         return "course"
     if SCORE_RE.search(rest):
@@ -174,14 +198,18 @@ class Route:
     @property
     def gen_model(self) -> str | None:
         """這一類用哪個模型生成；None 代表不生成（拒答）。LOCAL_MODEL 由 pipeline 決定。"""
-        return {"chitchat": CHAT_MODEL, "unanswerable": None}.get(self.label, "LOCAL_MODEL")
+        return {"chitchat": CHAT_MODEL, "unanswerable": None, "out_of_scope": None, "crisis": None}.get(self.label, "LOCAL_MODEL")
 
 
 def route(message: str, trace: list[TraceStep] | None = None, mode: str | None = None, model: str | None = None) -> Route:
     mode, model = mode or ROUTER_MODE, model or ROUTER_MODEL
     t = time.perf_counter()
     label, by, note = None, "rule", ""
-    if mode in ("llm", "fields"):
+    # 危機與範圍外一律先用規則判斷，不論分類方式：模型的類別清單沒有這兩類，交給模型會漏掉求助專線
+    pre = classify_rule(message)
+    if pre in ("crisis", "out_of_scope"):
+        label, by = pre, "rule" if mode == "rule" else "rule（範圍檢查，先於模型）"
+    elif mode in ("llm", "fields"):
         try:
             fn = classify_llm if mode == "llm" else classify_fields
             label, by = fn(message, model), (model if mode == "llm" else f"{model} 欄位檢查")
@@ -195,6 +223,38 @@ def route(message: str, trace: list[TraceStep] | None = None, mode: str | None =
     if trace is not None:
         trace.append(TraceStep(step="router", detail=f"分類為 {label}（{by}，{r.ms:.0f} ms{note}）"))
     return r
+
+
+CRISIS_REPLY = """謝謝您告訴我，這件事很重要。
+
+這個系統是校長的校務分析助手，無法處理這類狀況，需要由專業人員協助：
+
+- **1925 安心專線**（心理困擾、自殺防治，24 小時、免付費）；也可撥 **1995** 生命線、**1980** 張老師專線
+- **1953 教育部反霸凌專線**（24 小時）
+- **113 保護專線**（兒少保護、家暴、性侵害，24 小時）
+- 有立即危險，請撥 **110**（報案）或 **119**（救護）
+
+也請盡快聯繫孩子的導師或學校輔導室。"""
+
+
+SAFETY_FOOTER = (
+    "如果孩子有安全上的疑慮（例如自傷、霸凌、受到威脅或傷害），請撥 1925 安心專線、1953 反霸凌專線、113 保護專線；"
+    "有立即危險請撥 110 或 119，並聯繫孩子的導師或學校輔導室。"
+)
+
+
+def out_of_scope_reply(message: str = "") -> str:
+    """範圍外的回覆。家長談到自己的孩子時，一律附上求助專線：
+    危機訊息的關鍵字一定有漏（例如「想消失」），寧可多給，也不要漏掉需要幫助的人。"""
+    extra = "；也可查詢 Python 課程的彙總資料" if COURSE_ENABLED else ""
+    text = (
+        "這不在校長 AI 決策助手的範圍，所以我不回答。"
+        "我只回答全校成績與校務文件相關的問題，例如各年級、班級、科目的成績變化，"
+        f"或校務會議、教學研究會、學習扶助計畫記錄的事件{extra}。"
+    )
+    if CHILD_RE.search(message.strip()):
+        text += "\n\n" + SAFETY_FOOTER
+    return text
 
 
 REFUSAL = (
