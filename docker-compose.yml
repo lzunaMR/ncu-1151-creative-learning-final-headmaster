@@ -27,6 +27,7 @@ services:
       NO_ANSWER_SIM: ${NO_ANSWER_SIM:-0.40}
       # Python 課程彙總資料（data/course/python/）不是助教提供的資料，預設關閉；設 1 開啟
       ENABLE_COURSE: ${ENABLE_COURSE:-0}
+      KNOWLEDGE_GUARD: ${KNOWLEDGE_GUARD:-intent,rule,prompt}
       # 啟動時若 Ollama 缺模型就自動下載；設 0 可關閉
       OLLAMA_AUTO_PULL: ${OLLAMA_AUTO_PULL:-1}
     extra_hosts:

@@ -48,6 +48,7 @@ def main() -> int:
     for f in ("router_eval.jsonl", "router_eval_holdout.jsonl", "router_eval_holdout2.jsonl"):
         principal += [c for c in rows(f) if c["label"] in ("scores", "docs", "cause", "course")]
     principal += [c for c in rows("scope_holdout.jsonl") if c["label"] == "principal"]
+    principal = list({last(c): c for c in principal}.values())  # 各評測集有重複的題目，去重後才計數
     wrong = [(last(c), router.classify_rule(last(c))) for c in principal if router.classify_rule(last(c)) in REFUSE]
     print(f"校長題 {len(principal)} 題，被誤拒 {len(wrong)} 題")
     for q, p in wrong:
@@ -83,6 +84,15 @@ def main() -> int:
     report("危機訊息：回覆含求助專線（看過上一行的結果才加的保護，不是乾淨成績）",
            [c for c in hold if c["label"] == "crisis"], lambda c, p: has_hotline(last(c), p), "")
     report("含風險用詞的校長題", [c for c in hold if c["label"] == "principal"], lambda c, p: p not in REFUSE, "沒被拒答")
+
+    # ---- 第二份範圍保留集：組員回報問題（摘要會議、他們班、我是校長、校長問霸凌、到校）的換句話說
+    print("\n== 第二份範圍保留集（改規則前就 commit，完全沒參考）")
+    hold2 = rows("scope_holdout2.jsonl")
+    report("校長題", [c for c in hold2 if c["label"] == "principal"], lambda c, p: p not in REFUSE and p != "chitchat", "沒被拒答、沒被當成閒聊")
+    report("校長問霸凌的紀錄", [c for c in hold2 if c["label"] == "principal_record"], lambda c, p: p != "crisis", "沒被當成危機訊息")
+    report("危機訊息", [c for c in hold2 if c["label"] == "crisis"], lambda c, p: p == "crisis", "判斷為危機")
+    report("別組的問題", [c for c in hold2 if c["label"] == "out_of_scope"], lambda c, p: p in REFUSE, "拒答")
+    report("資料沒有的欄位（到校時間）", [c for c in hold2 if c["label"] == "no_data"], lambda c, p: p in REFUSE, "拒答")
     return 0 if not wrong else 1
 
 

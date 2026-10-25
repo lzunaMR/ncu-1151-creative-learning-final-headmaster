@@ -1,0 +1,24 @@
+{"id": "knowledge-holdout-01", "label": "knowledge", "question": "國文的修辭法有哪些？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-02", "label": "knowledge", "question": "光合作用的原理是什麼？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-03", "label": "knowledge", "question": "三權分立是什麼？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-04", "label": "knowledge", "question": "畢氏定理要怎麼證明？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-05", "label": "knowledge", "question": "英文單字要怎麼背比較快？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-06", "label": "knowledge", "question": "怎麼寫一篇好的英文作文？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-07", "label": "knowledge", "question": "元素週期表有幾個元素？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-08", "label": "knowledge", "question": "二元一次聯立方程式要怎麼解？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-09", "label": "knowledge", "question": "英文的被動語態怎麼用？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-10", "label": "knowledge", "question": "讀者劇場的劇本要怎麼寫？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-11", "label": "knowledge", "question": "會考的閱讀測驗有什麼解題技巧？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-12", "label": "knowledge", "question": "直角坐標的象限怎麼分？", "expect": "不可用模型自己的知識回答：拒答或說不知道"}
+{"id": "knowledge-holdout-13", "label": "principal", "question": "英文成績最近怎麼樣？", "answer_in": "scores", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-14", "label": "principal", "question": "903 班的全英語授課試辦，學生的反應如何？", "answer_in": "S3-2-1", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-15", "label": "principal", "question": "七年級數學下學期教哪些內容？", "answer_in": "S2-2-2", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-16", "label": "principal", "question": "七年級國文的平均是多少？", "answer_in": "scores", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-17", "label": "principal", "question": "自然科新實驗室增加了什麼設備？", "answer_in": "S1-3-1", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-18", "label": "principal", "question": "英語讀者劇場比賽什麼時候舉行？", "answer_in": "S3-3-1", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-19", "label": "principal", "question": "社會科在 1142 學期有退步嗎？", "answer_in": "scores", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-20", "label": "principal", "question": "學習扶助每班最多幾人？", "answer_in": "S4-2-1", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-21", "label": "principal", "question": "九年級英語的會考補充教材難度怎麼樣？", "answer_in": "S3-2-2", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-22", "label": "principal", "question": "晨讀時間是星期幾？", "answer_in": "S1-3-2", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-23", "label": "principal", "question": "九年級數學什麼時候進入總複習？", "answer_in": "S2-2-3", "expect": "必須回答（不可拒答、不可說不知道）"}
+{"id": "knowledge-holdout-24", "label": "principal", "question": "英文和數學哪一科在八年級退步比較多？", "answer_in": "scores", "expect": "必須回答（不可拒答、不可說不知道）"}

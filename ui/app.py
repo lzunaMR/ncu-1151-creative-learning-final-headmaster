@@ -16,6 +16,10 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
     st.session_state.messages = []
     st.session_state.pending = None
+if "answering" not in st.session_state:
+    # 正在回答的問題。回答期間停用輸入框與範例按鈕：Streamlit 收到新輸入會重跑整頁，正在等的回答會被丟掉
+    st.session_state.answering = None
+busy = st.session_state.answering is not None
 
 INTRO = """你好，我是**校長 AI 決策助手**，可以協助你：
 
@@ -108,7 +112,7 @@ with st.chat_message("assistant"):
     st.markdown(INTRO)
     cols = st.columns(2)
     for i, q in enumerate(EXAMPLES):
-        if cols[i % 2].button(q, key=f"example-{i}", use_container_width=True):
+        if cols[i % 2].button(q, key=f"example-{i}", use_container_width=True, disabled=busy):
             st.session_state.pending = q
 
 for m in st.session_state.messages:
@@ -117,15 +121,18 @@ for m in st.session_state.messages:
         if m.get("resp"):
             render_backend(m["resp"])
 
-typed = st.chat_input("輸入訊息…")
+typed = st.chat_input("回答完成後才能輸入下一題…" if busy else "輸入訊息…", disabled=busy)
 prompt = typed or st.session_state.pending
 st.session_state.pending = None
 
-if prompt:
+if prompt and not busy:
+    # 先記下問題並重跑一次，讓輸入框在回答期間顯示為停用
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.session_state.answering = prompt
+    st.rerun()
 
+if busy:
+    prompt = st.session_state.answering
     with st.chat_message("assistant"):
         # 地端模型在 CPU 上可能要十幾秒，先讓使用者知道系統正在處理
         with st.spinner("思考中…（判斷問題類型 → 查成績與校務文件 → 地端模型撰寫回答，約需 5～30 秒）"):
@@ -136,10 +143,9 @@ if prompt:
                     timeout=300,
                 )
                 r.raise_for_status()
+                resp = r.json()
+                st.session_state.messages.append({"role": "assistant", "content": resp["answer"], "resp": resp})
             except httpx.HTTPError as e:
-                st.error(f"呼叫 API 失敗：{e}")
-                st.stop()
-        resp = r.json()
-        st.markdown(resp["answer"])
-        render_backend(resp)
-    st.session_state.messages.append({"role": "assistant", "content": resp["answer"], "resp": resp})
+                st.session_state.messages.append({"role": "assistant", "content": f"呼叫 API 失敗：{e}"})
+    st.session_state.answering = None
+    st.rerun()

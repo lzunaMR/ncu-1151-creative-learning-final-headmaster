@@ -47,7 +47,7 @@ COURSE_ENABLED = os.environ.get("ENABLE_COURSE", "0").strip() == "1"
 #   評估改用修改前就寫好的第二份保留集 tests/router_eval_holdout2.jsonl）
 NO_FIELD_RE = re.compile(
     r"(哪位|哪個|哪些)(老師|教師|導師)|(老師|教師|導師).{0,8}(教得|教學能力|能力|評價|好不好|最差|最好|受歡迎|歡迎|年資|資歷)"
-    r"|缺席|出缺席|出席率|出勤|到校|遲到|曠課|請假(最多|次數|天數|紀錄)"
+    r"|缺席|出缺席|出席率|出勤|(幾點|準時|按時|每天)到校|到校(時間|狀況|情形|率)|遲到|曠課|請假(最多|次數|天數|紀錄)"
     r"|家庭|單親|低收|收入|社經|父母|家長.{0,4}(職業|學歷|教育程度)|教育程度|原住民|族群"
     r"|性別|男生|女生|男女"
     r"|補習|讀書.{0,4}(小時|時間)|睡眠|手機|上課.{0,4}(專心|態度|秩序)"
@@ -68,6 +68,7 @@ COURSE_WEAK_RE = re.compile(r"題目|作業|提交|通過率|小考|超時")
 SCHOOL_RE = re.compile(
     r"[七八九789]\s*年級|國[一二三]|(?<!\d)[789]\d{2}\s*班|班級|各班|段考|會考|學期|(?<!\d)1\d{3}(?!\d)"
     r"|國文|英文|英語|數學|自然|社會|學習扶助|補救|全校|校務|校長|導師|任課"
+    r"|研究會|會議|代理|試辦|晨讀|實驗室|讀者劇場|家長會|教務處|學務處|總務處|輔導室|哪一?個?班"
 )
 SCORE_RE = re.compile(r"成績|分數|平均|表現|數據|下滑|下降|退步|進步|缺考|及格|關注|建議|改善|(?<!\d)1\d{3}(?!\d)")
 CAUSE_RE = re.compile(r"原因|為什麼|關係|因為|有關|影響|所以")
@@ -87,17 +88,20 @@ OUT_OF_SCOPE_RE = re.compile(
     r"|摘要|整理.{0,6}重點|重點整理|給學生複習"
     r"|^什麼是|是什麼意思|移項|等量公理|去分母|驗算|一元一次|應用問題.{0,4}步驟"
 )
-CHILD_RE = re.compile(r"我(的)?(孩子|小孩|女兒|兒子)|^(孩子|小孩|女兒|兒子|他|她)")
+CHILD_RE = re.compile(r"我(的)?(孩子|小孩|女兒|兒子)|^(孩子|小孩|女兒|兒子|他(?!們)|她(?!們))")
+# 4. 校長問霸凌的紀錄、統計、宣導（沒有提到特定的人）不是危機訊息；文件沒有時走一般流程回答不知道
+RECORD_RE = re.compile(r"紀錄|統計|件數|案件|宣導|防治|政策|會議|校務|處理流程|通報流程")
+PERSONAL_RE = re.compile(r"我|孩子|小孩|女兒|兒子|他|她|被")
 
 
 def classify_rule(message: str) -> str:
     m = message.strip()
-    if CRISIS_RE.search(m):
+    if CRISIS_RE.search(m) and not (RECORD_RE.search(m) and not PERSONAL_RE.search(m)):
         return "crisis"
     if NO_FIELD_RE.search(m):
         return "unanswerable"
     # 開頭的問候語先拿掉；拿掉後還有實質內容（例如「你好，請問八年級數學平均多少？」）就照內容分類
-    if CHAT_RE.search(m) and len(m) <= 15:
+    if CHAT_RE.search(m) and len(m) <= 15 and not (SCHOOL_RE.search(m.replace("校長", "")) and (SCORE_RE.search(m) or QUESTION_RE.search(m))):
         return "chitchat"
     rest = GREETING_RE.sub("", m)
     if GREETING_RE.match(m) and not (
