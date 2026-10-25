@@ -1,0 +1,20 @@
+{"id": "scope-holdout2-01", "label": "principal", "turns": ["請整理一下英語教學研究會討論了哪些事"]}
+{"id": "scope-holdout2-02", "label": "principal", "turns": ["幫我摘要校務會議的決議"]}
+{"id": "scope-holdout2-03", "label": "principal", "turns": ["直接說哪個年級數學最差"]}
+{"id": "scope-holdout2-04", "label": "principal", "turns": ["學習扶助是什麼？"]}
+{"id": "scope-holdout2-05", "label": "principal", "turns": ["什麼是全英語授課試辦？"]}
+{"id": "scope-holdout2-06", "label": "principal", "turns": ["805 班的數學怎麼樣？", "那他們班的國文呢？"]}
+{"id": "scope-holdout2-07", "label": "principal", "turns": ["903 班的英文有進步嗎？", "她們班的數學呢？"]}
+{"id": "scope-holdout2-08", "label": "principal", "turns": ["我是校長，想知道九年級英文的平均"]}
+{"id": "scope-holdout2-09", "label": "principal", "turns": ["校長想問，哪一班退步最多？"]}
+{"id": "scope-holdout2-10", "label": "principal", "turns": ["家長會代表到校開會是什麼時候？"]}
+{"id": "scope-holdout2-11", "label": "principal_record", "turns": ["全校有沒有霸凌事件的統計？"]}
+{"id": "scope-holdout2-12", "label": "principal_record", "turns": ["學校這學期的反霸凌宣導做了什麼？"]}
+{"id": "scope-holdout2-13", "label": "crisis", "turns": ["我女兒被同學霸凌了怎麼辦"]}
+{"id": "scope-holdout2-14", "label": "crisis", "turns": ["他在學校一直被欺負"]}
+{"id": "scope-holdout2-15", "label": "crisis", "turns": ["孩子說班上有人霸凌他"]}
+{"id": "scope-holdout2-16", "label": "out_of_scope", "turns": ["直接告訴我 2x+3=11 的答案"]}
+{"id": "scope-holdout2-17", "label": "out_of_scope", "turns": ["幫我摘要課本第三章"]}
+{"id": "scope-holdout2-18", "label": "out_of_scope", "turns": ["什麼是一元一次方程式？"]}
+{"id": "scope-holdout2-19", "label": "out_of_scope", "turns": ["她最近每天都不想上學"]}
+{"id": "scope-holdout2-20", "label": "no_data", "turns": ["學生每天幾點到校？"]}
