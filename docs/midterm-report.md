@@ -1,10 +1,11 @@
 # 期中報告
 
-> 繳交前請刪除所有 `>` 開頭的說明文字。
-
 - 組別角色：校長 AI 決策助手
-- 組員：黃俞絜，115522100，yujieeeeeee（姓名、學號、GitHub 帳號）
-- 繳交 commit：（`git rev-parse midterm` 的結果）
+- 組員（姓名、學號、GitHub 帳號）：
+  - 黃俞絜，115522100，yujieeeeeee
+  - 唐翊軒，115522055，lzunaMR
+  - 劉峻益，114522118，junyi8891-svg
+- 繳交 commit：以 `midterm` tag 指向的 commit 為準（`git rev-parse midterm`）
 
 ## 1. 系統架構
 
@@ -12,8 +13,14 @@
 flowchart TB
     U["校長（使用者）"] --> UI["Streamlit 介面 :8501"]
     UI -->|"POST /chat"| H["FastAPI /chat<br/>pipeline.handle()"]
-    H --> GR["護欄<br/>期中固定 pass"]
-    GR --> IN{"需要查成績？<br/>analytics.parse()"}
+    H --> RT{"問題分流 router.py<br/>ROUTER_MODE=rule（關鍵字）"}
+    RT -->|"crisis（自傷、霸凌、暴力）<br/>out_of_scope（解題、出題、摘要、家長問孩子）<br/>unanswerable（資料沒有的欄位）"| GRX["護欄觸發 refuse，不生成<br/>category = unanswerable"]
+    GRX --> REF["依原因回覆：<br/>危機 → 附求助專線（1925、1953、113…）<br/>範圍外 → 說明只回答校務<br/>資料沒有的欄位 → 說明資料範圍"]
+    RT -->|chitchat| CHAT["閒聊：Ollama qwen2.5:0.5b<br/>不查資料，帶入對話歷史"]
+    RT -->|"scores／docs／cause"| KN{"學科知識題？<br/>knowledge.py（關鍵字）"}
+    KN -->|"是（改判 out_of_scope）"| GRX
+    KN -->|否| GR["護欄放行 pass"]
+    GR --> IN{"需要查成績？<br/>analytics.parse()<br/>只有科目名稱不算"}
 
     subgraph DATA["成績分析 analytics.py"]
         IN -->|是| PD["pandas 查詢 scores.csv<br/>學期 × 年級 × 班級 × 科目"]
@@ -36,35 +43,50 @@ flowchart TB
 
     IN -->|否| QE
     FACT --> QE
-    SRC --> P["組 prompt<br/>資料事實 + [段落id] 文件 + 對話歷史"]
+    SRC --> HON{"沒查到成績時：<br/>與校務文件最高相似度 < 0.40？<br/>honesty.py"}
+    HON -->|是| UNK["直接回答「不知道」<br/>不生成"]
+    HON -->|"否，或有查到成績"| P["組 prompt<br/>資料事實 + [段落id] 文件 + 對話歷史<br/>規則：學科知識題回答不在範圍"]
     FACT --> P
     P --> LOC["生成：Ollama qwen2.5:3b<br/>route = local"]
-    LOC --> ANS["answer：資料事實 + 解讀與建議（推測）<br/>+ sources、trace、recommendations"]
-    ANS --> UI
+    LOC --> CC["事後查核（不符就附警告）<br/>引用：[段落id] 須在 sources 中、內容須吻合<br/>數字：須出現在資料事實或文件中、對象不可張冠李戴<br/>模型說了不在範圍就只留那一句"]
+    CC --> ANS["answer：資料事實 + 解讀與建議（推測）<br/>+ sources、trace、recommendations"]
+    OUT["回傳 ChatResponse<br/>介面顯示回答與五個展開欄"]
+    ANS --> OUT
+    REF --> OUT
+    CHAT --> OUT
+    UNK --> OUT
 
     classDef local fill:#d8f3dc,stroke:#2d6a4f,color:#1b4332
-    class EMB,QE,LOC local
+    class EMB,QE,LOC,CHAT local
 ```
 
-綠色節點走 Ollama 地端模型：檢索的嵌入（`bge-m3`）與生成（`qwen2.5:3b`）。本組不使用雲端 API，所有回覆都由地端模型產生，`route` 固定回 `local`。
+綠色節點走 Ollama 地端模型：檢索的嵌入（`bge-m3`）、主要生成（`qwen2.5:3b`）與閒聊（`qwen2.5:0.5b`）。本組不使用雲端 API，所有回覆都由地端模型或程式產生，`route` 固定回 `local`。誠實回答的相似度判斷沿用同一個問題向量，不另外呼叫模型。圖中沒有畫 Python 課程資料的分支：那份資料不是助教提供的，系統預設關閉（`ENABLE_COURSE=0`），見 §7。
 
 | 階段 | 位置 | 說明 |
 | --- | --- | --- |
-| 切塊、索引 | `api/app/retrieval.py`（`chunk_documents`、`get_index`） | API 啟動時（`main.py` 的 `warmup`）建立；一個 `###` 段落一塊 |
+| 問題分流、護欄 | `api/app/router.py`（`route`）、`pipeline.check_guardrail` | 預設用關鍵字規則把問題分成 scores／docs／cause／chitchat／unanswerable／out_of_scope／crisis；後三類都回 `triggered=true, category=unanswerable, action=refuse`（校長組規格只定義 unanswerable 一類，細分的原因寫在 trace）；危機訊息比所有判斷都早；`ROUTER_MODE=off` 可退回期中規格的固定 `pass` |
+| 學科知識把關 | `api/app/knowledge.py`（`is_knowledge`、`cut_after_refusal`）、`analytics.parse` | 三層一起用（`KNOWLEDGE_GUARD=intent,rule,prompt`）：只提到科目名稱不算成績問題；關鍵字（怎麼用、原理、公式…）且沒有校務線索就改判範圍外；prompt 規則要模型對學科知識題只回答不在範圍 |
+| 切塊、索引 | `api/app/retrieval.py`（`chunk_documents`、`get_index`） | API 啟動時（`main.py` 的 `startup`：先由 `ollama_check` 確認模型，再 `warmup`）建立；一個 `###` 段落一塊 |
 | 檢索 | `retrieval.retrieve(query, k, version)` | 版本由 `RETRIEVER_VERSION` 切換，回傳段落 id 作為 `sources` |
 | 成績分析 | `api/app/analytics.py`（`analyze`、`run_query`） | pandas 計算兩學期差值並逐層找出下滑最多的年級、科目、班級；每項結論附可重跑的 `evidence.query` |
+| 誠實回答 | `api/app/honesty.py`（`top_similarity`） | 沒有查到成績、且問題與所有段落的最高相似度 < `NO_ANSWER_SIM`（0.40）時，直接回答不知道 |
 | 生成 | `api/app/pipeline.py`（`generate`，呼叫 Ollama `/api/chat`） | 數字由 pandas 算好放進 answer 的「資料顯示的事實」，模型只寫「解讀與建議」，事實與推測分開 |
+| 引用查核 | `pipeline.check_citations`、`misattributed` | 回答引用了沒檢索到的段落，或說明內容明顯較像另一段時，在回答後附警告；結果寫進 trace（`citation_check`、`citation_align`） |
+| 數字查核 | `pipeline.check_numbers`、`honesty.unsupported_numbers`、`misattributed_numbers` | 回答中出現資料事實、文件與問題都沒有的數字，或某班的數字被說成別的對象時，在回答後附警告 |
 
 ## 2. 設計決定與理由
 
 | 項目 | 選擇 | 理由 |
 | --- | --- | --- |
-| 切塊方式 | 一個 `###` 段落一塊（共 25 塊），每塊記錄 `covered_ids` | 文件本身已用 `###` 切成語意完整、自帶 id 的段落，一塊對應一個 id，`sources` 不需另外計算歸屬。也試過整個 `##` 章節一塊與滑動視窗：章節切塊 Recall@3 從 1.00 掉到 0.78（S1-3 同時含新實驗室與晨讀，晨讀題 eval-16 掉到第 8 名）；滑動視窗會切斷段落，必須另外判斷一塊算哪一段，Recall@3 也只有 0.88。詳見 [方法比較實驗](retrieval-experiments.md#切塊方式)。 |
+| 切塊方式 | 一個 `###` 段落一塊（共 25 塊），每塊記錄 `covered_ids` | 文件本身已用 `###` 切成語意完整、自帶 id 的段落，一塊對應一個 id，`sources` 不需另外計算歸屬。也試過整個 `##` 章節一塊與滑動視窗：章節切塊 Recall@3 從 1.00 掉到 0.78（S1-3 同時含新實驗室與晨讀，晨讀題 eval-16 掉到第 8 名）；滑動視窗會切斷段落，必須另外判斷一塊算哪一段，Recall@3 也只有 0.88。詳見 [方法比較實驗](retrieval-experiments.md#切塊方式)。之後另做一輪只改切塊的比較（15 種切法，跑之前先定好選擇規則：16 題當開發集、難題 12 題當測試集，以等預算 Recall@3 和成對 bootstrap 95% 信賴區間判斷）：沒有任何切法顯著優於段落切塊，章節切塊與兩種滑動視窗顯著較差，依規則留在最簡單的段落切塊（[第四輪](retrieval-experiments.md#第四輪切塊方式比較與怎麼選出最好的)）。 |
 | 切塊大小（註明單位：字元或 token） | 依段落自然長度，不設上限：平均 83 字元，最短 32、最長 157 字元 | 最長的段落也遠低於 bge-m3 的 8192 token 輸入上限，再切小只會把一件事拆成兩半（例如 S1-2-1 的「育嬰留停」與「代理教師接任」）。滑動視窗實驗用 120 字元、重疊 40 字元（約一個半段落），沒有比段落切塊好。 |
 | 嵌入模型 | `bge-m3`（1024 維，多語）；Docker 內透過主機 Ollama 的 `/api/embed` 地端執行 | 三個模型在同一條件下比較：bge-m3 的 Recall@3 為 1.00、MRR 0.90；bge-small-zh-v1.5（512 維）速度快約 10 倍，但「額外講義」對「補充教材」這題（eval-12）掉到第 4 名；多語 MiniLM（384 維，以英文為主訓練）各項最差（MRR 0.82）。選 bge-m3 的另一個原因是部署：Ollama 官方有 bge-m3，驗收機可地端執行、Docker 映像不用裝 torch；bge-small-zh 沒有官方 Ollama 版本。 |
 | K 值 | 3（每次取 3 個切塊；段落切塊下即 3 個段落），`RETRIEVER_K` 可調 | K=1 時 A 只有 13/16、B 15/16，因為向量的第 1、2 名常常只差 0.01–0.02，排序不穩；K=3 兩版都 16/16，也剛好放得下跨兩段的題目（eval-08、09、10、14）。K=5 沒有多命中任何一題，多出的 2 段都無關，只會讓 3B 地端模型讀更長、更雜的 context。 |
 | 檢索方法 | A：向量餘弦相似度；B：向量＋BM25（字元二元組）以 RRF 合併 | 向量擅長換句話說（「請長假、找人代課」對「育嬰留停、代理教師」，A 排第 1；BM25 排第 5）；BM25 擅長原文詞、班級代號與時間（805、16:10），兩者互補，B 的 MRR 從 0.90 提高到 0.97。中文 BM25 用字元二元組而不用 jieba：jieba 沒有比較好（Hit@3 一樣是 15/16），還多一個套件。不用重排序：bge-reranker-base 的 Hit@1 從 15 掉到 13、每題延遲約 5 倍，Docker 還得裝 torch。不用加權合併：需要正規化分數並調 α，MRR 0.94 也比 RRF 差。**限制**：在難題集（概括、口語問法）上 B 反而較差（Hit@3 10/12，A 為 12/12），因為問題和原文沒有共用詞時，BM25 那一路沒有訊號，還會把正確段落拖下去（見 §5、[第二輪實驗](retrieval-experiments.md#最重要的發現b-在難題集上反而比-a-差)）。 |
-| 地端模型 | 生成：`qwen2.5:3b`（Ollama，`/chat` 的所有回覆都走它，本組不使用雲端 API）；嵌入：`bge-m3`（Ollama，檢索用）。記憶體 8 GB 以下可改 `LOCAL_MODEL=qwen2.5:1.5b` | 規格限 3B 以下，`qwen2.5:3b` 是助教預設、驗收機已預裝，且 Qwen2.5 系列支援中文。3B 模型算數與遵循格式不可靠，所以設計上不讓它碰數字：統計結果由 pandas 算出並原樣放進回覆，模型只負責解讀與建議；prompt 也要求它只用給定的數字、以 [段落id] 標註文件、把原因寫成推測。整套流程不需要 API key，驗收機只要有 Ollama 就能執行 |
+| 地端模型 | 生成：`qwen2.5:3b`（Ollama，成績、文件、原因類問題都走它）；閒聊：`qwen2.5:0.5b`（Ollama，分流判定為閒聊時使用）；嵌入：`bge-m3`（Ollama，檢索用）。本組不使用雲端 API。記憶體 8 GB 以下可改 `LOCAL_MODEL=qwen2.5:1.5b` | 規格限 3B 以下，`qwen2.5:3b` 是助教預設、驗收機已預裝，且 Qwen2.5 系列支援中文。3B 模型算數與遵循格式不可靠，所以設計上不讓它碰數字：統計結果由 pandas 算出並原樣放進回覆，模型只負責解讀與建議；prompt 也要求它只用給定的數字、以 [段落id] 標註文件、把原因寫成推測。閒聊不需要查資料，改用 0.5B：「你好，你可以幫我做什麼？」從 8.9 秒降到約 1–2 秒，也不再引用無關段落。整套流程不需要 API key，驗收機只要有 Ollama 就能執行 |
+| 問題分流（護欄） | `ROUTER_MODE=rule`：關鍵字規則；另有 `llm`（小模型直接分類）、`fields`（小模型列出需要的資訊再對照）可切換 | 依事先排好的優先順序選：①兩份評測集都不能誤拒（拒答錯了，使用者完全拿不到答案）→ ②漏拒越少越好 → ③延遲越低越好。只有規則在 61 題評測集與 17 題保留集都沒有誤拒，而且不花時間。代價是推廣差：第一版規則在保留集的 6 題 unanswerable 一題都沒攔到。之後依組員檢查改成第二版（補上「導師」「出勤」等說法、問候語先拿掉再判斷），並用修改規則前就寫好的第二份保留集（21 題）評估：6 題 unanswerable 攔到 4 題、0 誤拒（整體 14/21 → 19/21，課程資料開啟時量測）；沒攔到的「新住民子女」「有特殊需求的學生」刻意不補關鍵字，以免保留集失去意義。`3b 欄位檢查` 保留集最好（88%），但 61 題中誤拒 4 題，所以不當預設（[分流實驗](router-experiments.md)）。第三版加入範圍判斷：規格把解題、出題、教材摘要、危機轉介分給其他角色，所以這些問題由護欄拒答，危機訊息附上 `data/referral.md` 的求助專線；問題含年級、班級、學期、科目等校務線索時一律不算範圍外，以免誤拒校長題。評估前先寫好保留集：校長題 74 題 0 誤拒、家教組與助教組評分用公開題 10/10 與 5/6 拒答、範圍保留集非校務問題 5/6 拒答，但危機訊息只有 2/4 認出（「想消失」「跟蹤」沒認出來，刻意不補關鍵字）。危機偵測要可靠需要更大的模型或專門的分類器，不在本專題範圍。護欄不在期中範圍，這部分是提前實作 |
+| 學科知識把關 | `KNOWLEDGE_GUARD=intent,rule,prompt`：成績分析不把只提到科目名稱的問題當成績題、關鍵字規則、prompt 規則三層一起用 | 範圍判斷漏掉的「英文的現在完成式怎麼用？」，因為含「英文」而查到英文成績，跳過了誠實回答門檻，模型就用自己的知識解釋文法。比較了四種方法，選擇規則在跑實驗前寫好：①校長題不能比原本多出任何一題沒回答 → ②開發集擋下最多 → ③比較快。intent＋rule＋prompt 讓開發集「用自己的知識回答」從 8/16 降到 0/16、校長題 0 誤擋；請 3B 模型直接判斷的 llm 方法誤擋 27 題以上，不採用。選定後保留集只跑一次：校長題 0/12 沒回答、學科知識題 10/12 擋下；沒擋下的「直角坐標的象限怎麼分？」模型用自己的知識回答而且答錯，代表規則漏掉、模型又不遵守時，系統仍可能有自信地講錯（[學科知識把關實驗](knowledge-guard.md)） |
+| 誠實回答門檻 | 沒有查到成績、且問題與所有段落的最高相似度 < 0.40 時，直接回答不知道 | 28 題有答案的題目最低相似度為 0.439，門檻設在它之下，實測 0/28 誤擋；但只擋得到 3/9 題完全無關的問題。也試過請 1.5B／3B 先判斷「能不能回答」，雖然幾乎抓到所有沒答案的題目，卻誤擋 8～13 題有答案的題目，所以不採用，改由 prompt 規則讓模型說「資料中沒有提到」（[誠實回答實驗](honesty-experiments.md)） |
 
 ## 3. 兩個版本
 
@@ -73,11 +95,14 @@ flowchart TB
 | 差異 | 段落切塊 → bge-m3 嵌入 → 問題向量與各段做餘弦相似度 → 取 Top-K | **只改檢索方法**：切塊、嵌入模型、K 都與 A 相同；另外用字元二元組建 BM25 索引，兩路各自排序後以 RRF（c=60）依名次合併，再取 Top-K |
 | 如何切換執行 | `.env` 設 `RETRIEVER_VERSION=A`（預設），再執行 `docker compose up -d --force-recreate api`（只用 `restart` 不會重讀 `.env`） | `.env` 改成 `RETRIEVER_VERSION=B`，同樣重建 api 容器。每則回覆的 trace 會寫明實際版本，例如「版本B K=3 命中 S1-2-1, S2-3-1, …」。不重啟也能兩版都跑：`python scripts/eval_retrieval.py --k 3`（直接呼叫 `retrieve(query, k, version)`） |
 
-另外做了 10 組只差一個變因的比較（嵌入模型、斷詞、合併方式、重排序、切塊方式），每種方法的優缺點與實際題目分析見 [docs/retrieval-experiments.md](retrieval-experiments.md)。
+選 A、B 之前做了四輪比較，每種方法的優缺點與實際題目分析見 [docs/retrieval-experiments.md](retrieval-experiments.md)：
+
+1. 第一輪：10 組只差一個變因的設定（嵌入模型、斷詞、合併方式、重排序、切塊方式），與 A、B 一起比較。
+2. 第二輪：另出 12 題難題集，比較 10 種進階方法（Small-to-Big、MMR、查詢擴展、HyDE、多重查詢、bge-m3 稀疏／多向量等）。發現 B 在難題集上比 A 差（見 §2「檢索方法」）。
+3. 第三輪：改用 Ollama（驗收環境）重跑兩個評測集；不用 LLM 的 14 組設定，每題名次都和 sentence-transformers 完全相同。
+4. 第四輪：只改切塊，比較 15 種切法（見 §2「切塊方式」）。
 
 ## 4. 評測集與命中紀錄
-
-> 至少 10 題。「應命中」與「實際命中」都填段落 id。
 
 評測集：`tests/retrieval_eval.jsonl`，16 題，涵蓋原文詞彙、換句話說、跨段落、詞彙不一致、數字代號五種題型。以下由 `python scripts/eval_retrieval.py --k 3` 產生。
 
@@ -112,15 +137,13 @@ flowchart TB
 
 建索引耗時（25 個段落，bge-m3 1024 維，Ollama）：第一次 32.1 秒（含 Ollama 把模型載入 GPU），模型已載入後重建 2.7 秒，都遠低於 10 分鐘的啟動預算。
 
-Docker 實機驗證（同一台機器，Docker Desktop 4.95.0）：`docker compose up -d --build` 到 `/health` 回 200 共 1 分 01 秒。`/chat` 問「805 班換數學老師之後，學生適應得如何？」，trace 為「版本A K=3 命中 S1-2-1, S2-3-1, S2-1-1」，與上表第 8 題相同；`tests/principal.jsonl` 中 principal-007～009 的 `sources_include` 檢查全部通過（這三題仍 FAIL，原因是 `recommendations` 尚未實作，與檢索無關）。
+Docker 實機驗證（同一台機器，Docker Desktop 4.95.0）：`docker compose up -d --build` 到 `/health` 回 200 共 1 分 01 秒。`/chat` 問「805 班換數學老師之後，學生適應得如何？」，trace 為「版本A K=3 命中 S1-2-1, S2-3-1, S2-1-1」，與上表第 8 題相同；`tests/principal.jsonl` 中 principal-007～009 的 `sources_include` 檢查全部通過（當時這三題仍 FAIL，原因是成績分析的 `recommendations` 還沒合併進來，與檢索無關；合併後全部通過，見 §6）。
 
 Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.internal` 連不到，`/chat` 會回 500，但 `/health` 仍是 200，不容易發現。需先設使用者環境變數 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama（防火牆只允許私人網路）。
 
 補充：另有 12 題難題集 `tests/retrieval_eval_hard.jsonl`（比較、否定、口語、抽象等問法），K=3 時 A 12/12（100%）、B 10/12（83%）。難題集先以 sentence-transformers 量測，之後改用 Ollama（`EMBED_BACKEND=ollama`）重跑，兩版每題的 Top-3 完全相同。逐題結果見 [docs/retrieval-experiments-hard-ollama-raw.md](retrieval-experiments-hard-ollama-raw.md)。
 
 ## 5. 失敗案例
-
-> 至少 2 個。只寫「找不到」不算，要寫出假設與驗證方法。
 
 §4 的 16 題在 K=3 時兩版都命中，因此失敗案例取自：難題集中 K=3 真的沒命中的題目（hard-09）、K=1 沒命中、跨段落題只找回一段，以及比較實驗中其他方法的漏失。每個案例都實際做過驗證，結果寫在最後一欄。
 
@@ -133,8 +156,6 @@ Windows 注意：Ollama 預設只聽 `127.0.0.1`，容器經 `host.docker.intern
 | eval-16 學校有沒有推動學生多看課外書的活動？（版本 A，K=1） | S1-3-2 | S4-1-1（S1-3-2 排第 2） | 向量抓到的是「為學生辦的措施」這種整體語意，S4-1-1「提供學習落後的學生額外的補強教學」也符合；真正的關鍵詞「課外書」和原文「課外讀物」只有部分相同，對向量影響很小。兩者餘弦只差 0.015，排序本來就不穩 | 換三種問法比較：「課外書」改成「課外讀物」→ S1-3-2 升第 1（但只領先 0.007）；只問「學生多看課外書」→ S1-3-2 反而掉到第 3；問「學校有沒有晨讀活動？」→ S1-3-2 以 0.71 大幅領先。證實向量對泛用語意敏感、對關鍵詞不敏感；版本 B 的 BM25 用「課外」二元組補上後排第 1 |
 
 ## 6. 公開測試題結果
-
-> 執行 `python scripts/run_tests.py tests/<role>.jsonl`，貼上輸出，並說明主要的失敗原因。期中不以通過率計分。
 
 執行環境：乾淨資料夾（不含 `.env` 與任何索引）執行 `demo.ps1` 啟動 Docker（版本 A、K=3、問題分流 `ROUTER_MODE=rule`；Ollama `qwen2.5:3b`／`qwen2.5:0.5b`／`bge-m3`；Windows 11、CPU），再執行 `python scripts/run_tests.py tests/principal.jsonl`，12 題共 173 秒。
 
@@ -167,7 +188,7 @@ PASS  principal-012
 | cause（007～009） | 3/3 | `sources` 命中應引用的校務文件段落（例如 008 命中 S1-2-1、S2-3-1） |
 | unanswerable（010～012） | 3/3 | 護欄不在期中範圍，但我們先用問題分流（`api/app/router.py`）實作：判定需要資料沒有的欄位（教師、家庭背景、出缺席）時回 `refuse`。加入分流前這 3 題全部失敗（9/12，因為護欄固定 `pass`） |
 
-**通過率要保守解讀**：預設的關鍵字規則是看著這些題目寫的。在規則固定後才寫的保留集（17 題、換了說法）上，規則一題 unanswerable 都沒攔到（0/6），隱藏題換了問法就可能失敗，詳見 [docs/router-experiments.md](router-experiments.md)。
+**通過率要保守解讀**：預設的關鍵字規則是看著這些題目寫的。第一版規則在規則固定後才寫的保留集（17 題、換了說法）上，一題 unanswerable 都沒攔到（0/6）；第二版改用修改規則前就寫好的第二份保留集（21 題）評估，unanswerable 攔到 4/6、0 誤拒，「新住民子女」「有特殊需求的學生」這類沒想到的身分類別仍然攔不住。關鍵字規則只擋得到寫規則的人想得到的說法，隱藏題換了問法就可能失敗，詳見 [docs/router-experiments.md](router-experiments.md)。
 
 同一環境下，`tests/my_tests.jsonl` 2/2 通過（閒聊改由 `qwen2.5:0.5b` 回覆，仍記得多輪中的名字）；`python scripts/check_evidence.py tests/principal.jsonl` 重跑全部 evidence，20/20 筆一致（拒答的 3 題不產生 evidence）。
 
@@ -185,19 +206,20 @@ PASS  principal-012
 | `tests/retrieval_eval_hard.jsonl`（12 題難題） | Claude Code | 依 S1–S4 草擬比較、否定、口語等較難的題目 | 先固定同義詞辭典才出題（避免辭典配合題目）；每題逐句對照原文，確認答案確實在所標的段落；`eval_retrieval.py` 檢查 id 都存在 |
 | `api/app/retrieval.py` 第二輪（句子切塊、MMR、查詢擴展）與 `api/app/rag_variants.py`（HyDE、多重查詢、bge-m3 稀疏／多向量） | Claude Code | 撰寫進階 RAG 方法 | 以同一題（hard-11）逐一跑過所有方法，並印出中間結果（HyDE 文字、改寫問句、稀疏權重）人工檢查；bge-m3 稀疏／多向量依 FlagEmbedding 原始碼的算法實作，並確認權重檔來自同一模型 repo |
 | `docs/retrieval-experiments.md` 第二輪分析 | Claude Code | 草擬各方法優缺點 | 每個原因都另外驗證：印出 BM25 共同二元組、兩兩段落相似度（MMR）、LLM 實際輸出（HyDE 幻覺、改寫飄移）、稀疏權重；並用程式逐題比對各方法與 A 的名次差異，修正了 3 處與數據不符的敘述 |
-| `api/app/analytics.py`（成績分析、recommendations） | Claude（Cowork） | 撰寫問題解析、pandas 查詢組裝、兩學期差值與逐層下鑽、evidence JSON 化 | ①`scripts/check_evidence.py` 以 `df = pd.read_csv(scores.csv)` 重跑 principal 12 題的全部 evidence，24/24 筆與回傳結果一致；②另做一份改過分數的 csv（把八年級數學下滑抹平、改成 703 班數學大跌），回答隨之改為七年級／703 班，確認沒有把結論寫死；③逐題人工核對 001～004 的年級、班級與數字 |
-| `api/app/pipeline.py`（/chat 組裝、對話歷史、地端生成） | Claude（Cowork） | 撰寫 `handle` 流程、prompt、地端生成與錯誤處理 | 以假的 Ollama 確認多輪對話會帶入歷史、Ollama 關閉時 `/chat` 仍回 200 且 trace 寫明失敗原因；本機 Windows + Ollama 實跑 `tests/my_tests.jsonl` 2/2、`tests/principal.jsonl` 9/12（未過的 3 題為護欄，不在期中範圍） |
+| `api/app/analytics.py`（成績分析、recommendations） | Claude（Cowork） | 撰寫問題解析、pandas 查詢組裝、兩學期差值與逐層下鑽、evidence JSON 化 | ①`scripts/check_evidence.py` 以 `df = pd.read_csv(scores.csv)` 重跑 principal 12 題的全部 evidence，24/24 筆與回傳結果一致（當時護欄固定 `pass`，拒答題也會產生 evidence；加入分流後拒答的 3 題不再產生，重跑為 20/20，見 §6）；②另做一份改過分數的 csv（把八年級數學下滑抹平、改成 703 班數學大跌），回答隨之改為七年級／703 班，確認沒有把結論寫死；③逐題人工核對 001～004 的年級、班級與數字 |
+| `api/app/pipeline.py`（/chat 組裝、對話歷史、地端生成） | Claude（Cowork） | 撰寫 `handle` 流程、prompt、地端生成與錯誤處理 | 以假的 Ollama 確認多輪對話會帶入歷史、Ollama 關閉時 `/chat` 仍回 200 且 trace 寫明失敗原因；本機 Windows + Ollama 實跑 `tests/my_tests.jsonl` 2/2、`tests/principal.jsonl` 9/12（未過的 3 題為護欄，不在期中範圍；加入問題分流後為 12/12，見 §6） |
 | §1 架構圖、§2「地端模型」列、README 本組說明 | Claude（Cowork） | 草擬 Mermaid 架構圖與說明文字 | 以 mermaid-cli 實際渲染確認可顯示；圖中每個節點對照程式中的函式與 `.env` 變數名稱 |
 | 第二輪實驗以 Ollama 重跑（`docs/retrieval-experiments-*-ollama-raw.md`） | Claude Code | 以 Ollama 的 bge-m3 與 qwen2.5:3b 重跑兩個評測集的 16 組設定，並分析與 sentence-transformers 結果的差異 | 用程式逐格比對兩次執行的名次表，只有 HyDE、多重查詢（換了 LLM）有差異；印出 3B 模型的實際生成內容人工檢查；每題延遲異常（2.3 秒）時，以 Ollama 回報的 `total_duration`（0.04 秒）對照，查出是 Windows 的 `localhost` 先試 IPv6 造成，改用 `127.0.0.1` 後重測為 0.3 秒 |
 | Docker 一鍵 demo（`demo.ps1`、`demo.sh`、`docker-compose.yml`、`api/app/ollama_check.py`） | Claude Code | 讓 `docker compose up` 不需要 `.env`、啟動時自動檢查並下載 Ollama 模型、一鍵腳本處理 `OLLAMA_HOST` | 在不含 `.env` 的乾淨資料夾實際執行 `demo.ps1`：79 秒完成，腳本自動把 Ollama 改成監聽 `0.0.0.0`；發現 PowerShell 5.1 把 `/health` 的中文解碼錯誤造成誤報，改比對英文的 `ready` 欄位後重跑無誤報；以 `-Version B` 切換後，trace 顯示「版本B」；`demo.sh` 以 `bash -n` 檢查語法（未在 macOS／Linux 實跑）；`ollama_check` 測過連得到、連不到、缺模型三種情況，並實際自動下載一個 46 MB 模型後刪除；`/health` 以 TestClient 確認回 200 並附 Ollama 狀態 |
-| §6 公開測試題 | Claude Code | 在 Docker 環境執行 `run_tests.py`、整理失敗原因 | 輸出為實際執行結果原樣貼上；cause 類 008 另以 `/chat` 確認 sources 為 S1-2-1、S2-3-1、S2-1-1；失敗的 3 題逐一對照 `spec/midterm.md`，確認護欄不在期中範圍 |
+| §6 公開測試題 | Claude Code | 在 Docker 環境執行 `run_tests.py`、整理失敗原因 | 輸出為實際執行結果原樣貼上；cause 類 008 另以 `/chat` 確認 sources 為 S1-2-1、S2-3-1、S2-1-1；加入分流前失敗的 3 題逐一對照 `spec/midterm.md`，確認護欄不在期中範圍；加入分流後在 Docker 乾淨環境重跑，12/12 |
 | 切塊方式比較與選擇（`scripts/select_chunking.py`、`docs/retrieval-experiments.md` 第四輪） | Claude Code | 實作 8 類、15 種切塊方式，以及「先定規則再看結果」的選擇流程（開發／測試集分開、成對 bootstrap 信賴區間） | 15 種切法都檢查過每塊的 `covered_ids` 是真實段落 id，並抽看視窗、遞迴、語意切塊的實際內容；選擇規則在跑實驗前就寫在腳本開頭；分析中的每個數字都對照原始輸出 |
 | 問題分流（`api/app/router.py`、`scripts/eval_router.py`、`docs/router-experiments.md`） | Claude Code | 實作規則、小模型分類、欄位檢查三種分流方式；閒聊改用 0.5B、unanswerable 拒答 | 61 題評測集先於規則寫好；規則寫完後先記下 `router.py` 雜湊值才出 17 題保留集，看過結果也沒有再改規則或 prompt；分流前後以同一題實測延遲與引用段落；Docker 乾淨環境重跑公開題 12/12、my_tests 2/2、evidence 20/20 |
-| Python 課程資料集（`scripts/build_course_dataset.py`、`data/course/python/`） | Claude Code | 從課程平台資料庫備份產生彙總資料集並去識別化 | 由平台管理者授權；只讀資料表結構與筆數決定做法，不讀個人資料；產生後逐行讀完三個輸出檔，確認沒有姓名、學號、email、網址；發現「用總數相減可反推被抑制的格子」與「0／100 計分時平均會透露人數」後，改為人數四捨五入到 5、平均取整數並重新檢查；以 `git check-ignore` 與 commit 內容確認資料庫備份沒有被 commit |
-| 課程資料接入（`api/app/course.py`、分流 `course` 類） | Claude Code | 課程統計查詢、課程題目檢索、課程專用 prompt、回答數字查核 | 實際送 6 題課程問題並逐句閱讀回答，找出 8 個問題（含模型編造隨堂考分數）並逐一修正，見 `docs/course-data.md`；每題 evidence 以 pandas 獨立重跑一致；確認 78 題分流評測集沒有被誤分到 `course`；公開題仍 12/12 |
+| Python 課程資料集（`scripts/build_course_dataset.py`、`data/course/python/`）。**額外實驗**：不是助教提供的資料，系統預設關閉（`ENABLE_COURSE=0`），§4 的檢索評測與 §6 的公開題都沒有使用 | Claude Code | 從課程平台資料庫備份產生彙總資料集並去識別化 | 由平台管理者授權；只讀資料表結構與筆數決定做法，不讀個人資料；產生後逐行讀完三個輸出檔，確認沒有姓名、學號、email、網址；發現「用總數相減可反推被抑制的格子」與「0／100 計分時平均會透露人數」後，改為人數四捨五入到 5、平均取整數並重新檢查；以 `git check-ignore` 與 commit 內容確認資料庫備份沒有被 commit |
+| 課程資料接入（`api/app/course.py`、分流 `course` 類）。**額外實驗**，預設關閉，`.\demo.ps1 -Course` 才會開啟 | Claude Code | 課程統計查詢、課程題目檢索、課程專用 prompt、回答數字查核 | 實際送 6 題課程問題並逐句閱讀回答，找出 8 個問題（含模型編造隨堂考分數）並逐一修正，見 `docs/course-data.md`；每題 evidence 以 pandas 獨立重跑一致；確認 78 題分流評測集沒有被誤分到 `course`；公開題仍 12/12 |
 | 整套系統檢查（`scripts/check_system.py`）、引用查核 | Claude Code | 撰寫 11 類情境檢查；新增引用查核與追問格式修正 | 從 GitHub 重新 clone 到乾淨資料夾、刪除本機映像後執行 `demo.ps1`，`check_system.py` 11/11、公開題 12/12、evidence 20/20；另在瀏覽器逐一展開 Sources、護欄判定、Agent 思考步驟、路由、建議與統計依據五個欄位確認內容；讀完每則回答，發現模型引用了沒有檢索到的段落與重複格式後才加入修正 |
 | 誠實回答「不知道」（`api/app/honesty.py`、`scripts/eval_honesty.py`、`docs/honesty-experiments.md`）與介面開場介紹、思考中提示 | Claude Code | 設計並評估相似度門檻與可回答性檢查；介面自我介紹與範例按鈕 | 另寫 17 題「資料沒有答案」的題目（其中 1 題經查原文其實有答案，已移除並註明）；量測 28 題有答案題目的相似度分布決定門檻，確認 0 題誤擋；可回答性檢查實測誤擋 8～13 題後決定不採用；把沒有答案的題目送進完整系統逐題讀回答；瀏覽器實際點範例按鈕、確認思考中提示與不知道的回答；`check_system.py` 13/13 |
 | 組員檢查問題修正（分流第二版、課程資料預設關閉、跨學年追蹤同一批學生） | Claude Code | 依組員回報修正分流規則；課程資料改為選用；跨學年班級比較改以學號追蹤 | 組員回報的 6 題逐一重現後才修改；修改規則前先寫好並 commit 第二份保留集（21 題），修改後 14/21 → 19/21、0 誤拒，未為剩下 2 題補關鍵字；修改中發現「出席」造成新的誤拒並修正；跨學年追蹤以手算驗證（1141 學期 803 班學生在 1132 學期全在 703 班，數學平均 63.24 → 63.24，與系統 +0.00 相符）；`check_system.py` 新增 5 項回歸檢查 |
 | 縮短 Docker 建置時間（根目錄 `Dockerfile`、`.dockerignore`、`docker-compose.yml`） | Claude Code | api 與 ui 共用一個映像、改用 uv 安裝、移除 uvicorn 不需要的額外套件 | 先以 `--progress=plain` 量出各步驟時間（兩個 pip install 佔 3／4、numpy 與 pandas 下載兩次），再改；同樣清除所有快取的條件下建置 72 → 54 秒、映像 1,266 → 762 MB；以容器時間戳記確認多出的時間在下載而非 API 啟動（API 啟動 4 秒）；改完重跑 `check_system.py` 與公開題 |
 | 範圍判斷（`api/app/router.py` 的 `out_of_scope`、`crisis`，`scripts/eval_scope.py`） | Claude Code | 依規格的角色分工，讓非校務問題拒答、危機訊息拒答並附求助專線 | 寫規則前先 commit 16 題範圍保留集（`4e0ab1b`）；別組公開題單號開發、雙號評分；校長題 74 題（去重後；原本誤算成 111）0 誤拒（課程資料開關兩種都測）；保留集危機題只有 2/4 判斷正確，看過結果後才加上「家長談孩子附專線」的保護，文件註明 4/4 不是乾淨成績，且未為漏掉的題目補關鍵字；發現 `ROUTER_MODE=llm／fields` 時危機訊息會漏掉專線並修正；三份分流評測集重跑結果與修改前相同；`check_system.py` 新增 6 項檢查 |
 | 學科知識題把關、數字查核、組員回報的分流修正（`api/app/knowledge.py`、`api/app/honesty.py`、`api/app/analytics.py`、`scripts/eval_knowledge.py`、`docs/knowledge-guard.md`） | Claude Code | 比較 intent／prompt／llm／rule 四種把關方法；校務回答加入數字與對象查核；修正成績分析只取一個科目、缺年級整體平均；修正組員回報的 6 個分流問題 | 寫方法前先 commit 24 題保留集（`77327eb`），改分流前先 commit 20 題第二份範圍保留集（`cf25d8d`）；選擇規則寫在腳本開頭，因生成隨機性中途修訂，理由與時間點照實記錄；學科知識題的回答全部人工逐題閱讀；保留集只跑一次，沒擋下的 2 題未補關鍵字；保留集校長題逐題核對內容，發現 2 題答錯後修正成績分析，並以 pandas 手算核對（七年級國文 74.82、八年級數學 -5.55／英文 -0.70）；數字查核以 8 個真實回答測試，再讓 69 題校長題跑過、逐一閱讀警告；發現先前「校長題 111 題」含 37 題重複，已更正為 74 題 |
+| 報告修訂：§1 架構圖與階段表（加入分流、範圍外與危機、學科知識把關、閒聊、誠實回答、引用與數字查核）、§2 新增「問題分流」「誠實回答門檻」「學科知識把關」三列並更新「地端模型」「切塊方式」、§3 實驗摘要、§4、§6、§7 過時敘述與課程資料註明、README 系統檢查項數 | Claude Code | 對照合併後的程式，找出報告中與現況不符的地方並改寫 | 架構圖每個節點與分支順序都對照 `pipeline.handle()`、`router.py`、`knowledge.py`、`honesty.py` 的程式碼，函式名稱逐一確認存在；新加的數字逐一對照 `docs/router-experiments.md`、`docs/knowledge-guard.md`、`docs/honesty-experiments.md`、`docs/retrieval-experiments.md` 與 PR 紀錄；第二份分流保留集 4/6、0 誤拒與公開題 12/12 另以目前的程式實際重跑；Mermaid 以瀏覽器實際渲染確認可顯示 |

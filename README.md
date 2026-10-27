@@ -40,7 +40,7 @@ cd ncu-1151-creative-learning-final-headmaster
 python scripts/check_system.py
 ```
 
-會送 11 類問題（閒聊與多輪記憶、成績分析與追問、原因題、只查文件、護欄拒答、Python 課程資料），逐項檢查回傳格式與內容，最後印出「11/11 通過」。只用 Python 標準函式庫，不必安裝套件。公開題：`python scripts/run_tests.py tests/principal.jsonl`。
+會送 34 項檢查（閒聊與多輪記憶、成績分析與追問、原因題、只查文件、護欄拒答、誠實回答、範圍外與危機訊息、學科知識題、數字查核、跨學年比較、Python 課程資料），逐項檢查回傳格式與內容。課程資料關閉時（預設）會略過 3 項課程題，最後印出「31/31 通過」；開啟時為「34/34 通過」。只用 Python 標準函式庫，不必安裝套件。公開題：`python scripts/run_tests.py tests/principal.jsonl`。
 
 腳本會依序：檢查 Docker 與 Ollama → 讓 Ollama 接受容器連線（Windows 自動設定 `OLLAMA_HOST=0.0.0.0` 並重啟 Ollama）→ 下載缺少的模型（`qwen2.5:3b`、`qwen2.5:0.5b`、`bge-m3`）→ `docker compose up -d --build` → 等待就緒 → 開啟 http://localhost:8501 。
 
